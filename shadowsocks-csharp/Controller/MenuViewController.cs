@@ -1029,7 +1029,7 @@ namespace Shadowsocks.Controller
 
         private static void FeedbackItem_Click(object sender, RoutedEventArgs e)
         {
-            Utils.OpenURL(@"https://github.com/HMBSbige/ShadowsocksR-Windows/issues/new/choose");
+            Utils.OpenURL(@"https://github.com/LonelyZJ/ShadowsocksR-Windows/issues/new/choose");
         }
 
         private void notifyIcon_TrayLeftMouseUp(object sender, RoutedEventArgs e)

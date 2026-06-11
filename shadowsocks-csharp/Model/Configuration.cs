@@ -473,7 +473,7 @@ namespace Shadowsocks.Model
             LogEnable = true;
             SameHostForSameTarget = true;
             IsPreRelease = false;
-            AutoCheckUpdate = true;
+            AutoCheckUpdate = false;
             LangName = string.Empty;
             DnsClients = new List<DnsClient>
             {
