@@ -2,7 +2,7 @@
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net7.0-windows</TargetFramework>
+    <TargetFramework>net10.0-windows</TargetFramework>
     <LangVersion>latest</LangVersion>
     <UseWPF>true</UseWPF>
     <GenerateAssemblyTitleAttribute>false</GenerateAssemblyTitleAttribute>
@@ -47,7 +47,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="ARSoft.Tools.Net" Version="2.3.0" />
+    <PackageReference Include="ARSoft.Tools.Net" Version="3.0.0" />
     <PackageReference Include="CryptoBase" Version="1.7.2" />
     <PackageReference Include="Hardcodet.NotifyIcon.Wpf" Version="2.0.1" />
     <PackageReference Include="HMBSbige.SingleInstance" Version="6.0.1" />
@@ -144,12 +144,12 @@
     </Page>
   </ItemGroup>
 
-  <Target Name="PreBuild" BeforeTargets="PreBuildEvent">
-    <Exec Command="cd &quot;$(ProjectDir)&quot;&#xD;&#xA;&#xD;&#xA;SyncfusionLicenseRegister.bat PreBuild Program.cs" />
+  <Target Name="PreBuild" BeforeTargets="PreBuildEvent" Condition="'$(SyncfusionLicenseKey)' != ''">
+    <Exec WorkingDirectory="$(ProjectDir)" Command="&quot;$(ProjectDir)SyncfusionLicenseRegister.bat&quot; PreBuild Program.cs" />
   </Target>
 
-  <Target Name="PostBuild" AfterTargets="PostBuildEvent">
-    <Exec Command="cd &quot;$(ProjectDir)&quot;&#xD;&#xA;&#xD;&#xA;SyncfusionLicenseRegister.bat PostBuild Program.cs" />
+  <Target Name="PostBuild" AfterTargets="PostBuildEvent" Condition="'$(SyncfusionLicenseKey)' != ''">
+    <Exec WorkingDirectory="$(ProjectDir)" Command="&quot;$(ProjectDir)SyncfusionLicenseRegister.bat&quot; PostBuild Program.cs" />
   </Target>
 
 </Project>

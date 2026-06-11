@@ -3,10 +3,15 @@ using ARSoft.Tools.Net.Dns;
 using Shadowsocks.Enums;
 using Shadowsocks.ViewModel;
 using System;
+using System.Buffers.Binary;
+using System.IO;
 using System.Linq;
 using System.Net;
+using System.Net.Security;
 using System.Net.Sockets;
 using System.Security.Authentication;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
@@ -189,12 +194,12 @@ public class DnsClient : ViewModelBase
         return DnsType == DnsType.DnsOverTls || IsIp(dns);
     }
 
-    private static async Task<IPAddress?> QueryBaseAAsync(ARSoft.Tools.Net.Dns.DnsClient client, DomainName domain, DnsQueryOptions options, CancellationToken ct)
+    private static async Task<IPAddress?> QueryBaseAAsync(IPAddress serverIp, ushort port, int timeout, bool isTcpEnabled, bool isUdpEnabled, DomainName domain, DnsQueryOptions options, CancellationToken ct)
     {
         DnsMessage? message = null;
         try
         {
-            message = await client.ResolveAsync(domain, RecordType.A, RecordClass.INet, options, ct);
+            message = await QueryPlainAsync(serverIp, port, timeout, isTcpEnabled, isUdpEnabled, domain, RecordType.A, options, ct);
         }
         catch
         {
@@ -203,12 +208,12 @@ public class DnsClient : ViewModelBase
         return message?.AnswerRecords?.OfType<ARecord>().Select(answerRecord => answerRecord.Address).FirstOrDefault();
     }
 
-    private static async Task<IPAddress?> QueryBaseAaaaAsync(ARSoft.Tools.Net.Dns.DnsClient client, DomainName domain, DnsQueryOptions options, CancellationToken ct)
+    private static async Task<IPAddress?> QueryBaseAaaaAsync(IPAddress serverIp, ushort port, int timeout, bool isTcpEnabled, bool isUdpEnabled, DomainName domain, DnsQueryOptions options, CancellationToken ct)
     {
         DnsMessage? message = null;
         try
         {
-            message = await client.ResolveAsync(domain, RecordType.Aaaa, RecordClass.INet, options, ct);
+            message = await QueryPlainAsync(serverIp, port, timeout, isTcpEnabled, isUdpEnabled, domain, RecordType.Aaaa, options, ct);
         }
         catch
         {
@@ -217,11 +222,11 @@ public class DnsClient : ViewModelBase
         return message?.AnswerRecords?.OfType<AaaaRecord>().Select(answerRecord => answerRecord.Address).FirstOrDefault();
     }
 
-    private static async Task<IPAddress?> QueryBaseAsync(ARSoft.Tools.Net.Dns.DnsClient client, DomainName domain, DnsQueryOptions options, bool ipv6First, CancellationToken ct)
+    private static async Task<IPAddress?> QueryBaseAsync(IPAddress serverIp, ushort port, int timeout, bool isTcpEnabled, bool isUdpEnabled, DomainName domain, DnsQueryOptions options, bool ipv6First, CancellationToken ct)
     {
         var res = await Task.WhenAll(
-            QueryBaseAaaaAsync(client, domain, options, ct),
-            QueryBaseAAsync(client, domain, options, ct));
+            QueryBaseAaaaAsync(serverIp, port, timeout, isTcpEnabled, isUdpEnabled, domain, options, ct),
+            QueryBaseAAsync(serverIp, port, timeout, isTcpEnabled, isUdpEnabled, domain, options, ct));
 
         if (ipv6First)
         {
@@ -231,12 +236,59 @@ public class DnsClient : ViewModelBase
         return res[1] ?? res[0];
     }
 
-    private static async Task<IPAddress?> QueryBaseTlsAAsync(DnsOverTlsClient client, DomainName domain, DnsQueryOptions options, CancellationToken ct)
+    private static async Task<DnsMessage?> QueryPlainAsync(IPAddress serverIp, ushort port, int timeout, bool isTcpEnabled, bool isUdpEnabled, DomainName domain, RecordType recordType, DnsQueryOptions options, CancellationToken ct)
+    {
+        var query = CreateDnsQuery(domain, recordType, RecordClass.INet, options);
+
+        if (isUdpEnabled)
+        {
+            try
+            {
+                var udpResponse = await QueryUdpAsync(serverIp, port, timeout, query, ct);
+                if (udpResponse is not null && (!udpResponse.IsTruncated || !isTcpEnabled))
+                {
+                    return udpResponse;
+                }
+            }
+            catch
+            {
+                // Fallback to TCP when configured.
+            }
+        }
+
+        return isTcpEnabled ? await QueryTcpAsync(serverIp, port, timeout, query, ct) : null;
+    }
+
+    private static async Task<DnsMessage?> QueryUdpAsync(IPAddress serverIp, ushort port, int timeout, byte[] query, CancellationToken ct)
+    {
+        using var timeoutCts = CreateTimeoutTokenSource(timeout, ct);
+        var token = timeoutCts.Token;
+
+        using var udpClient = new UdpClient(serverIp.AddressFamily);
+        udpClient.Connect(serverIp, port);
+        await udpClient.SendAsync(query, query.Length).WaitAsync(token);
+
+        var result = await udpClient.ReceiveAsync().WaitAsync(token);
+        return DnsMessage.Parse(result.Buffer);
+    }
+
+    private static async Task<DnsMessage?> QueryTcpAsync(IPAddress serverIp, ushort port, int timeout, byte[] query, CancellationToken ct)
+    {
+        using var timeoutCts = CreateTimeoutTokenSource(timeout, ct);
+        var token = timeoutCts.Token;
+
+        using var tcpClient = new TcpClient(serverIp.AddressFamily);
+        await tcpClient.ConnectAsync(serverIp, port, token);
+
+        return await SendLengthPrefixedDnsQueryAsync(tcpClient.GetStream(), query, token);
+    }
+
+    private static async Task<IPAddress?> QueryBaseTlsAAsync(IPAddress serverIp, string authName, ushort port, int timeout, DomainName domain, DnsQueryOptions options, CancellationToken ct)
     {
         DnsMessage? message = null;
         try
         {
-            message = await client.ResolveAsync(domain, RecordType.A, RecordClass.INet, options, ct);
+            message = await QueryTlsAsync(serverIp, authName, port, timeout, domain, RecordType.A, options, ct);
         }
         catch
         {
@@ -245,12 +297,12 @@ public class DnsClient : ViewModelBase
         return message?.AnswerRecords?.OfType<ARecord>().Select(answerRecord => answerRecord.Address).FirstOrDefault();
     }
 
-    private static async Task<IPAddress?> QueryBaseTlsAaaaAsync(DnsOverTlsClient client, DomainName domain, DnsQueryOptions options, CancellationToken ct)
+    private static async Task<IPAddress?> QueryBaseTlsAaaaAsync(IPAddress serverIp, string authName, ushort port, int timeout, DomainName domain, DnsQueryOptions options, CancellationToken ct)
     {
         DnsMessage? message = null;
         try
         {
-            message = await client.ResolveAsync(domain, RecordType.Aaaa, RecordClass.INet, options, ct);
+            message = await QueryTlsAsync(serverIp, authName, port, timeout, domain, RecordType.Aaaa, options, ct);
         }
         catch
         {
@@ -259,18 +311,172 @@ public class DnsClient : ViewModelBase
         return message?.AnswerRecords?.OfType<AaaaRecord>().Select(answerRecord => answerRecord.Address).FirstOrDefault();
     }
 
-    private static async Task<IPAddress?> QueryBaseTlsAsync(DnsOverTlsClient client, DomainName domain, DnsQueryOptions options, bool ipv6First, CancellationToken ct)
+    private static async Task<IPAddress?> QueryBaseTlsAsync(IPAddress serverIp, string authName, ushort port, int timeout, DomainName domain, DnsQueryOptions options, bool ipv6First, CancellationToken ct)
     {
         if (ipv6First)
         {
-            var res = await Task.WhenAll(QueryBaseTlsAaaaAsync(client, domain, options, ct), QueryBaseTlsAAsync(client, domain, options, ct));
+            var res = await Task.WhenAll(
+                QueryBaseTlsAaaaAsync(serverIp, authName, port, timeout, domain, options, ct),
+                QueryBaseTlsAAsync(serverIp, authName, port, timeout, domain, options, ct));
             return res[0] ?? res[1];
         }
         else
         {
-            var res = await Task.WhenAll(QueryBaseTlsAAsync(client, domain, options, ct));
+            var res = await Task.WhenAll(QueryBaseTlsAAsync(serverIp, authName, port, timeout, domain, options, ct));
             return res[0];
         }
+    }
+
+    private static async Task<DnsMessage?> QueryTlsAsync(IPAddress serverIp, string authName, ushort port, int timeout, DomainName domain, RecordType recordType, DnsQueryOptions options, CancellationToken ct)
+    {
+        using var timeoutCts = CreateTimeoutTokenSource(timeout, ct);
+        var token = timeoutCts.Token;
+
+        using var tcpClient = new TcpClient(serverIp.AddressFamily);
+        await tcpClient.ConnectAsync(serverIp, port, token);
+
+        await using var sslStream = new SslStream(tcpClient.GetStream(), false);
+        await sslStream.AuthenticateAsClientAsync(new SslClientAuthenticationOptions
+        {
+            TargetHost = authName,
+            EnabledSslProtocols = SslProtocols.Tls13 | SslProtocols.Tls12
+        }, token);
+
+        var query = CreateDnsQuery(domain, recordType, RecordClass.INet, options);
+        return await SendLengthPrefixedDnsQueryAsync(sslStream, query, token);
+    }
+
+    private static async Task<DnsMessage?> SendLengthPrefixedDnsQueryAsync(Stream stream, byte[] query, CancellationToken ct)
+    {
+        var lengthPrefix = new byte[2];
+        BinaryPrimitives.WriteUInt16BigEndian(lengthPrefix, (ushort)query.Length);
+        await stream.WriteAsync(lengthPrefix, ct);
+        await stream.WriteAsync(query, ct);
+        await stream.FlushAsync(ct);
+
+        var responseLengthBuffer = new byte[2];
+        await stream.ReadExactlyAsync(responseLengthBuffer, ct);
+        var responseLength = BinaryPrimitives.ReadUInt16BigEndian(responseLengthBuffer);
+        if (responseLength == 0)
+        {
+            return null;
+        }
+
+        var response = new byte[responseLength];
+        await stream.ReadExactlyAsync(response, ct);
+        return DnsMessage.Parse(response);
+    }
+
+    private static CancellationTokenSource CreateTimeoutTokenSource(int timeout, CancellationToken ct)
+    {
+        var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        if (timeout > 0)
+        {
+            timeoutCts.CancelAfter(timeout);
+        }
+        return timeoutCts;
+    }
+
+    private static byte[] CreateDnsQuery(DomainName domain, RecordType recordType, RecordClass recordClass, DnsQueryOptions options)
+    {
+        using var stream = new MemoryStream();
+
+        WriteUInt16(stream, RandomNumberGenerator.GetInt32(ushort.MaxValue + 1));
+        WriteUInt16(stream, options.IsRecursionDesired ? 0x0100 : 0);
+        WriteUInt16(stream, 1);
+        WriteUInt16(stream, 0);
+        WriteUInt16(stream, 0);
+        WriteUInt16(stream, options.IsEDnsEnabled ? 1 : 0);
+
+        WriteDomainName(stream, domain);
+        WriteUInt16(stream, (ushort)recordType);
+        WriteUInt16(stream, (ushort)recordClass);
+
+        if (options.IsEDnsEnabled)
+        {
+            WriteOptRecord(stream, options);
+        }
+
+        return stream.ToArray();
+    }
+
+    private static void WriteDomainName(Stream stream, DomainName domain)
+    {
+        foreach (var label in domain.Labels)
+        {
+            var bytes = Encoding.ASCII.GetBytes(label);
+            if (bytes.Length > 63)
+            {
+                throw new InvalidDataException("DNS label length exceeds 63 bytes.");
+            }
+            stream.WriteByte((byte)bytes.Length);
+            stream.Write(bytes);
+        }
+        stream.WriteByte(0);
+    }
+
+    private static void WriteOptRecord(Stream stream, DnsQueryOptions options)
+    {
+        var ednsOptions = CreateEdnsOptions(options);
+
+        stream.WriteByte(0);
+        WriteUInt16(stream, 41);
+        WriteUInt16(stream, options.EDnsOptions?.UdpPayloadSize is > 0 ? options.EDnsOptions.UdpPayloadSize : 4096);
+        WriteUInt32(stream, options.IsDnsSecOk ? 0x8000u : 0u);
+        WriteUInt16(stream, ednsOptions.Length);
+        stream.Write(ednsOptions);
+    }
+
+    private static byte[] CreateEdnsOptions(DnsQueryOptions options)
+    {
+        using var stream = new MemoryStream();
+
+        foreach (var clientSubnet in options.EDnsOptions?.Options.OfType<ClientSubnetOption>() ?? [])
+        {
+            WriteClientSubnetOption(stream, clientSubnet);
+        }
+
+        return stream.ToArray();
+    }
+
+    private static void WriteClientSubnetOption(Stream stream, ClientSubnetOption clientSubnet)
+    {
+        var address = clientSubnet.Address;
+        var addressBytes = address.GetAddressBytes();
+        var family = address.AddressFamily == AddressFamily.InterNetworkV6 ? 2 : 1;
+        var maxPrefix = addressBytes.Length * 8;
+        var sourceNetmask = Math.Min(clientSubnet.SourceNetmask, maxPrefix);
+        var scopeNetmask = Math.Min(clientSubnet.ScopeNetmask, maxPrefix);
+        var significantBytes = (sourceNetmask + 7) / 8;
+        var subnetBytes = new byte[significantBytes];
+        Array.Copy(addressBytes, subnetBytes, significantBytes);
+
+        var remainingBits = sourceNetmask % 8;
+        if (remainingBits != 0 && subnetBytes.Length > 0)
+        {
+            subnetBytes[^1] &= (byte)(0xff << (8 - remainingBits));
+        }
+
+        WriteUInt16(stream, 8);
+        WriteUInt16(stream, 4 + subnetBytes.Length);
+        WriteUInt16(stream, family);
+        stream.WriteByte((byte)sourceNetmask);
+        stream.WriteByte((byte)scopeNetmask);
+        stream.Write(subnetBytes);
+    }
+
+    private static void WriteUInt16(Stream stream, int value)
+    {
+        Span<byte> buffer = stackalloc byte[2];
+        BinaryPrimitives.WriteUInt16BigEndian(buffer, (ushort)value);
+        stream.Write(buffer);
+    }
+
+    private static void WriteUInt32(Stream stream, uint value)
+    {
+        Span<byte> buffer = stackalloc byte[4];
+        BinaryPrimitives.WriteUInt32BigEndian(buffer, value);
+        stream.Write(buffer);
     }
 
     #endregion
@@ -309,12 +515,7 @@ public class DnsClient : ViewModelBase
         {
             case DnsType.Default:
             {
-                var dnsClient = new ARSoft.Tools.Net.Dns.DnsClient(IPAddress.Parse(DnsServer), Timeout, Port)
-                {
-                    IsTcpEnabled = IsTcpEnabled,
-                    IsUdpEnabled = IsUdpEnabled
-                };
-                return await QueryBaseAsync(dnsClient, domain, options, Ipv6First, ct);
+                return await QueryBaseAsync(IPAddress.Parse(DnsServer), Port, Timeout, IsTcpEnabled, IsUdpEnabled, domain, options, Ipv6First, ct);
             }
             case DnsType.DnsOverTls:
             {
@@ -323,14 +524,7 @@ public class DnsClient : ViewModelBase
                 {
                     return null;
                 }
-                var tlsServer = new TlsUpstreamServer
-                {
-                    IPAddress = _ip,
-                    AuthName = DnsServer,
-                    SslProtocols = SslProtocols.Tls13 | SslProtocols.Tls12
-                };
-                var dnsClient = new DnsOverTlsClient(tlsServer, Timeout, Port);
-                var res = await QueryBaseTlsAsync(dnsClient, domain, options, Ipv6First, ct);
+                var res = await QueryBaseTlsAsync(_ip, DnsServer, Port, Timeout, domain, options, Ipv6First, ct);
                 if (res is null)
                 {
                     _ip = null;

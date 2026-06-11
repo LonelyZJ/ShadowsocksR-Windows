@@ -10,13 +10,9 @@
 
 ## [Wiki](https://github.com/HMBSbige/ShadowsocksR-Windows/wiki)
 
-## Download
-
-* [latest release]
-
 ## Develop
 
-Visual Studio Community 2022 is recommended.
+Visual Studio Community 2026 with the .NET 10 SDK is recommended.
 
 ## License
 

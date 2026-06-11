@@ -9,12 +9,12 @@
 dotnet build -c Release shadowsocks-csharp.sln
 
 # 发布框架依赖应用
-# 输出目录：shadowsocks-csharp/bin/Release/net7.0-windows/publish/
-dotnet publish -c Release -f net7.0-windows shadowsocks-csharp/shadowsocksr.csproj
+# 输出目录：shadowsocks-csharp/bin/Release/net10.0-windows/publish/
+dotnet publish -c Release -f net10.0-windows shadowsocks-csharp/shadowsocksr.csproj
 
 # 发布自包含版本
-dotnet publish -c Release -f net7.0-windows -r win-x64 --self-contained true shadowsocks-csharp/shadowsocksr.csproj
-dotnet publish -c Release -f net7.0-windows -r win-x86 --self-contained true shadowsocks-csharp/shadowsocksr.csproj
+dotnet publish -c Release -f net10.0-windows -r win-x64 --self-contained true shadowsocks-csharp/shadowsocksr.csproj
+dotnet publish -c Release -f net10.0-windows -r win-x86 --self-contained true shadowsocks-csharp/shadowsocksr.csproj
 
 # 完整 CI 构建脚本：app + x86 + x64，并修补 DLL 加载路径
 .\build.ps1                 # 构建全部目标
@@ -40,7 +40,7 @@ CI 环境必须设置 `SyncfusionLicenseKey` 环境变量。Syncfusion 许可会
 
 ## 项目概览
 
-ShadowsocksR for Windows 是一个基于 .NET 7.0 WPF 的桌面应用，实现 ShadowsocksR 代理协议。应用通过系统托盘 GUI 管理 SSR 服务器，并集成 Windows 系统代理设置。项目采用 GPLv3 许可证。
+ShadowsocksR for Windows 是一个基于 .NET 10 WPF 的桌面应用，实现 ShadowsocksR 代理协议。应用通过系统托盘 GUI 管理 SSR 服务器，并集成 Windows 系统代理设置。项目采用 GPLv3 许可证。
 
 解决方案 `shadowsocks-csharp.sln` 包含两个项目：
 

@@ -5,7 +5,7 @@ Write-Host 'dotnet SDK info'
 dotnet --info
 
 $exe = 'ShadowsocksR.exe'
-$net_tfm = 'net7.0-windows'
+$net_tfm = 'net10.0-windows'
 $configuration = 'Release'
 $output_dir = "$PSScriptRoot\shadowsocks-csharp\bin\$configuration"
 $proj_path = "$PSScriptRoot\shadowsocks-csharp\shadowsocksr.csproj"

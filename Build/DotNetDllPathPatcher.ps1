@@ -18,6 +18,29 @@ $dll_name = [Path]::ChangeExtension($exe_name, '.dll')
 Write-Debug "exe: $exe_name"
 Write-Debug "dll: $dll_name"
 
+function Find-Bytes {
+    param([byte[]]$bytes, [byte[]]$pattern)
+
+    if ($pattern.Length -eq 0 -or $bytes.Length -lt $pattern.Length) {
+        return -1
+    }
+
+    for ($i = 0; $i -le $bytes.Length - $pattern.Length; $i++) {
+        $found = $true
+        for ($j = 0; $j -lt $pattern.Length; $j++) {
+            if ($bytes[$i + $j] -ne $pattern[$j]) {
+                $found = $false
+                break
+            }
+        }
+        if ($found) {
+            return $i
+        }
+    }
+
+    return -1
+}
+
 function Update-Exe {
     $old_bytes = [Encoding]::UTF8.GetBytes("$dll_name`0")
     if ($old_bytes.Count -gt $max_path_length) {
@@ -32,7 +55,7 @@ function Update-Exe {
     }
 
     $bytes = [File]::ReadAllBytes($exe_path)
-    $index = (Get-Content $exe_path -Raw -Encoding 28591).IndexOf("$dll_name`0")
+    $index = Find-Bytes $bytes $old_bytes
     if ($index -lt 0) {
         throw [InvalidDataException] 'Could not find old dll path'
     }
@@ -48,7 +71,7 @@ function Update-Exe {
     $fs = [File]::OpenWrite($exe_path)
     try {
         $fs.Write($bytes, 0, $index)
-        $fs.Write($new_bytes)
+        $fs.Write($new_bytes, 0, $new_bytes.Count)
         $fs.Write($bytes, $end_postion, $end_length)
     }
     finally {
