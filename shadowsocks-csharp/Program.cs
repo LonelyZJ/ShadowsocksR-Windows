@@ -53,7 +53,7 @@ namespace Shadowsocks
             Logging.DefaultError = Console.Error;
 
             Global.ViewController = new MenuViewController(Global.Controller);
-            SystemEvents.SessionEnding += Global.ViewController.Quit_Click;
+            SystemEvents.SessionEnding += (_, _) => ShutdownController();
 
             Global.Controller.Reload();
             if (Global.GuiConfig.IsDefaultConfig())
@@ -75,7 +75,7 @@ namespace Shadowsocks
                     }
                     default:
                     {
-                        StopController();
+                        ShutdownController();
                         return;
                     }
                 }
@@ -88,10 +88,15 @@ namespace Shadowsocks
             app.Run();
         }
 
-        private static void StopController()
+        private static int _shutdownStarted;
+        private static void ShutdownController()
         {
-            Global.ViewController?.Quit_Click(default, default);
-            Global.Controller?.Stop();
+            if (Interlocked.Exchange(ref _shutdownStarted, 1) == 0)
+            {
+                Global.ViewController?.Shutdown();
+            }
+
+            Global.Controller?.Shutdown();
             Global.Controller = null;
         }
 
@@ -99,7 +104,7 @@ namespace Shadowsocks
         {
             Reg.RemoveUrlProtocol(@"ssr");
             Reg.RemoveUrlProtocol(@"sub");
-            StopController();
+            ShutdownController();
         }
 
         private static void SystemEvents_PowerModeChanged(object sender, PowerModeChangedEventArgs e)
@@ -146,6 +151,7 @@ namespace Shadowsocks
             if (Interlocked.Increment(ref _exited) == 1)
             {
                 Logging.Log(LogLevel.Error, $@"{e.ExceptionObject}");
+                ShutdownController();
                 MessageBox.Show(
                 $@"{I18NUtil.GetAppStringValue(@"UnexpectedError")}{Environment.NewLine}{e.ExceptionObject}",
                 Controller.HttpRequest.UpdateChecker.Name, MessageBoxButton.OK, MessageBoxImage.Error);

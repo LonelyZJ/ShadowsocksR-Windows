@@ -33,6 +33,11 @@ namespace Shadowsocks.Controller
         private HttpProxyRunner _httpProxyRunner;
         private GfwListUpdater _gfwListUpdater;
         private bool _stopped;
+        private volatile bool _isShuttingDown;
+
+        internal bool IsStoppedForTesting => _stopped;
+
+        internal bool IsShuttingDownForTesting => _isShuttingDown;
 
         public class PathEventArgs : EventArgs
         {
@@ -276,6 +281,11 @@ namespace Shadowsocks.Controller
         /// </summary>
         public void ToggleMode(ProxyMode mode)
         {
+            if (_isShuttingDown)
+            {
+                return;
+            }
+
             ProxyMode oldMode = Global.GuiConfig.SysProxyMode;
             Global.GuiConfig.SysProxyMode = mode;
             ReloadPacServer();
@@ -381,23 +391,41 @@ namespace Shadowsocks.Controller
             }
         }
 
-        public void Stop()
+        public bool Shutdown()
         {
-            if (_stopped)
+            return Stop(true);
+        }
+
+        public bool Stop(bool finalShutdown = false)
+        {
+            if (finalShutdown)
             {
-                return;
+                _isShuttingDown = true;
             }
-            _stopped = true;
 
-            StopPortMap();
-
-            _listener?.Stop();
-            _httpProxyRunner?.Stop();
-            if (Global.GuiConfig.SysProxyMode is not ProxyMode.NoModify)
+            if (_stopped && !finalShutdown)
             {
-                SystemProxy.Restore();
+                return true;
+            }
+
+            if (!_stopped)
+            {
+                StopPortMap();
+
+                _listener?.Stop();
+                _httpProxyRunner?.Stop();
+            }
+
+            var shouldRestoreSystemProxy = Global.GuiConfig.SysProxyMode is not ProxyMode.NoModify;
+            var proxyRestored = true;
+            if (shouldRestoreSystemProxy)
+            {
+                proxyRestored = SystemProxy.Restore(Global.GuiConfig.LocalPort);
             }
             ServerTransferTotal.Save(_transfer, Global.GuiConfig.Configs);
+
+            _stopped = !shouldRestoreSystemProxy || proxyRestored;
+            return proxyRestored;
         }
 
         public void ClearTransferTotal(string serverId)
@@ -469,6 +497,11 @@ namespace Shadowsocks.Controller
 
         public void Reload()
         {
+            if (_isShuttingDown)
+            {
+                return;
+            }
+
             StopPortMap();
             // some logic in configuration updated the config when saving, we need to read it again
             Global.GuiConfig = MergeGetConfiguration(Global.GuiConfig);
@@ -489,6 +522,7 @@ namespace Shadowsocks.Controller
 
             _listener?.Stop();
             _httpProxyRunner.Stop();
+            var started = false;
             try
             {
                 _httpProxyRunner.Start(Global.GuiConfig);
@@ -502,6 +536,7 @@ namespace Shadowsocks.Controller
                 };
                 _listener = new Listener(services);
                 _listener.Start(Global.GuiConfig, 0);
+                started = true;
             }
             catch (Exception e)
             {
@@ -514,7 +549,11 @@ namespace Shadowsocks.Controller
 
             Application.Current.Dispatcher.InvokeOnUiThread(() => { ConfigChanged?.Invoke(this, EventArgs.Empty); });
 
-            UpdateSystemProxy();
+            if (started)
+            {
+                _stopped = false;
+                UpdateSystemProxy();
+            }
         }
 
         private static void ThrowSocketException(ref Exception e)
@@ -542,9 +581,9 @@ namespace Shadowsocks.Controller
             }
         }
 
-        private void UpdateSystemProxy()
+        private bool UpdateSystemProxy()
         {
-            SystemProxy.Update(Global.GuiConfig, _pacServer);
+            return !_isShuttingDown && SystemProxy.Update(Global.GuiConfig, _pacServer);
         }
 
         private void PacDaemon_UserRuleFileChanged(object sender, EventArgs e)

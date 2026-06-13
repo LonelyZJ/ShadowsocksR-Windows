@@ -90,6 +90,7 @@ namespace Shadowsocks.Controller
         private System.Timers.Timer timerDelayCheckUpdate;
 
         private bool configFrom_open;
+        private bool _isDisposed;
         private readonly List<EventParams> eventList = new();
 
         public MenuViewController(MainController controller)
@@ -1003,7 +1004,19 @@ namespace Shadowsocks.Controller
 
         public void Quit_Click(object sender, EventArgs e)
         {
-            controller.Stop();
+            Shutdown();
+            Application.Current.Shutdown();
+        }
+
+        public void Shutdown()
+        {
+            if (_isDisposed)
+            {
+                return;
+            }
+
+            _isDisposed = true;
+            controller.Shutdown();
             if (_serverConfigWindow != null)
             {
                 _serverConfigWindow.Close();
@@ -1025,7 +1038,6 @@ namespace Shadowsocks.Controller
                 ViewUtils.DestroyIcon(_notifyIcon.Icon.Handle);
             }
             _notifyIcon.Dispose();
-            Application.Current.Shutdown();
         }
 
         private static void OpenWiki_Click(object sender, RoutedEventArgs e)
