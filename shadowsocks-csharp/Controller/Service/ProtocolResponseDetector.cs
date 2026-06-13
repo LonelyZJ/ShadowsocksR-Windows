@@ -17,12 +17,26 @@ namespace Shadowsocks.Controller.Service
         protected Protocol protocol = Protocol.NotBegin;
         private byte[] _sendBuffer = new byte[0];
         private byte[] _recvBuffer = new byte[0];
+        private const int MaxProbeBufferSize = 4096;
 
         public bool Pass { get; set; }
 
         public ProtocolResponseDetector()
         {
             Pass = false;
+        }
+
+        private static void AppendProbeData(ref byte[] buffer, byte[] data, int length)
+        {
+            if (buffer == null || data == null || length <= 0 || buffer.Length >= MaxProbeBufferSize)
+            {
+                return;
+            }
+
+            var copyLength = Math.Min(length, MaxProbeBufferSize - buffer.Length);
+            var oldLength = buffer.Length;
+            Array.Resize(ref buffer, oldLength + copyLength);
+            Array.Copy(data, 0, buffer, oldLength, copyLength);
         }
 
         public void OnSend(byte[] sendData, int length)
@@ -32,8 +46,7 @@ namespace Shadowsocks.Controller.Service
                 return;
             }
 
-            Array.Resize(ref _sendBuffer, _sendBuffer.Length + length);
-            Array.Copy(sendData, 0, _sendBuffer, _sendBuffer.Length - length, length);
+            AppendProbeData(ref _sendBuffer, sendData, length);
 
             if (_sendBuffer.Length < 2)
             {
@@ -84,8 +97,7 @@ namespace Shadowsocks.Controller.Service
                 return 0;
             }
 
-            Array.Resize(ref _recvBuffer, _recvBuffer.Length + length);
-            Array.Copy(recv_data, 0, _recvBuffer, _recvBuffer.Length - length, length);
+            AppendProbeData(ref _recvBuffer, recv_data, length);
 
             if (_recvBuffer.Length < 2)
             {

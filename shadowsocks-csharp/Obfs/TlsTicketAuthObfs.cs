@@ -26,6 +26,7 @@ namespace Shadowsocks.Obfs
         private int handshake_status;
         private List<byte[]> data_sent_buffer = new();
         private byte[] data_recv_buffer = new byte[0];
+        private int data_recv_buffer_len;
         private uint send_id;
         private bool fastauth;
 
@@ -148,6 +149,27 @@ namespace Shadowsocks.Obfs
             start += len;
             outlength += len + 5;
             ++send_id;
+        }
+
+        private void AppendRecvData(byte[] data, int datalength)
+        {
+            if (datalength <= 0)
+            {
+                return;
+            }
+
+            Util.Utils.SetArrayMinSize2(ref data_recv_buffer, data_recv_buffer_len + datalength);
+            Array.Copy(data, 0, data_recv_buffer, data_recv_buffer_len, datalength);
+            data_recv_buffer_len += datalength;
+        }
+
+        private void ConsumeRecvData(int length)
+        {
+            data_recv_buffer_len -= length;
+            if (data_recv_buffer_len > 0)
+            {
+                Array.Copy(data_recv_buffer, length, data_recv_buffer, 0, data_recv_buffer_len);
+            }
         }
 
         public override byte[] ClientEncode(byte[] encryptdata, int datalength, out int outlength)
@@ -337,12 +359,11 @@ namespace Shadowsocks.Obfs
 
             if ((handshake_status & 8) == 8)
             {
-                Array.Resize(ref data_recv_buffer, data_recv_buffer.Length + datalength);
-                Array.Copy(encryptdata, 0, data_recv_buffer, data_recv_buffer.Length - datalength, datalength);
+                AppendRecvData(encryptdata, datalength);
                 needsendback = false;
                 var outdata = new byte[65536];
                 outlength = 0;
-                while (data_recv_buffer.Length > 5)
+                while (data_recv_buffer_len > 5)
                 {
                     if (data_recv_buffer[0] != 0x17)
                     {
@@ -351,26 +372,23 @@ namespace Shadowsocks.Obfs
 
                     var len = (data_recv_buffer[3] << 8) + data_recv_buffer[4];
                     var pack_len = len + 5;
-                    if (pack_len > data_recv_buffer.Length)
+                    if (pack_len > data_recv_buffer_len)
                     {
                         break;
                     }
 
                     Array.Copy(data_recv_buffer, 5, outdata, outlength, len);
                     outlength += len;
-                    var buffer = new byte[data_recv_buffer.Length - pack_len];
-                    Array.Copy(data_recv_buffer, pack_len, buffer, 0, buffer.Length);
-                    data_recv_buffer = buffer;
+                    ConsumeRecvData(pack_len);
                 }
                 return outdata;
             }
             else
             {
-                Array.Resize(ref data_recv_buffer, data_recv_buffer.Length + datalength);
-                Array.Copy(encryptdata, 0, data_recv_buffer, data_recv_buffer.Length - datalength, datalength);
+                AppendRecvData(encryptdata, datalength);
                 outlength = 0;
                 needsendback = false;
-                if (data_recv_buffer.Length >= 11 + 32 + 1 + 32)
+                if (data_recv_buffer_len >= 11 + 32 + 1 + 32)
                 {
                     var data = new byte[32];
                     Array.Copy(data_recv_buffer, 11, data, 0, 22);
@@ -381,23 +399,23 @@ namespace Shadowsocks.Obfs
                         throw new ObfsException("ClientDecode data error: wrong sha1");
                     }
 
-                    var headerlength = data_recv_buffer.Length;
+                    var headerlength = data_recv_buffer_len;
                     data = new byte[headerlength];
                     Array.Copy(data_recv_buffer, 0, data, 0, headerlength - 10);
                     hmac_sha1(data, headerlength);
                     if (!data_recv_buffer.AsSpan(headerlength - 10, 10).SequenceEqual(data.AsSpan(headerlength - 10, 10)))
                     {
                         headerlength = 0;
-                        while (headerlength < data_recv_buffer.Length &&
+                        while (headerlength < data_recv_buffer_len &&
                                (data_recv_buffer[headerlength] == 0x14 || data_recv_buffer[headerlength] == 0x16))
                         {
                             headerlength += 5;
-                            if (headerlength >= data_recv_buffer.Length)
+                            if (headerlength >= data_recv_buffer_len)
                             {
                                 return encryptdata;
                             }
                             headerlength += (data_recv_buffer[headerlength - 2] << 8) | data_recv_buffer[headerlength - 1];
-                            if (headerlength > data_recv_buffer.Length)
+                            if (headerlength > data_recv_buffer_len)
                             {
                                 return encryptdata;
                             }
@@ -411,9 +429,7 @@ namespace Shadowsocks.Obfs
                             throw new ObfsException("ClientDecode data error: wrong sha1");
                         }
                     }
-                    var buffer = new byte[data_recv_buffer.Length - headerlength];
-                    Array.Copy(data_recv_buffer, headerlength, buffer, 0, buffer.Length);
-                    data_recv_buffer = buffer;
+                    ConsumeRecvData(headerlength);
                     handshake_status |= 8;
                     var ret = ClientDecode(encryptdata, 0, out outlength, out needsendback);
                     needsendback = true;

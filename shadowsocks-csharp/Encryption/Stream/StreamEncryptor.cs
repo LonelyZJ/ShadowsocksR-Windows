@@ -12,6 +12,9 @@ namespace Shadowsocks.Encryption.Stream
         // every connection should create its own buffer
         private readonly ByteCircularBuffer _encCircularBuffer = new(ProxyAuthHandler.BufferSize * 2);
         private readonly ByteCircularBuffer _decCircularBuffer = new(ProxyAuthHandler.BufferSize * 2);
+        private byte[] _encPlainBuffer = Array.Empty<byte>();
+        private byte[] _encCipherBuffer = Array.Empty<byte>();
+        private byte[] _decCipherBuffer = Array.Empty<byte>();
 
         protected Dictionary<string, EncryptorInfo> ciphers;
 
@@ -129,10 +132,11 @@ namespace Shadowsocks.Encryption.Stream
                 _encryptIVSent = true;
             }
             var size = _encCircularBuffer.Size;
-            var plain = _encCircularBuffer.Get(size);
-            var cipher = new byte[size];
-            CipherUpdate(true, size, plain, cipher);
-            Buffer.BlockCopy(cipher, 0, outbuf, cipherOffset, size);
+            Utils.SetArrayMinSize(ref _encPlainBuffer, size);
+            Utils.SetArrayMinSize(ref _encCipherBuffer, size);
+            _encCircularBuffer.Get(_encPlainBuffer, 0, size);
+            CipherUpdate(true, size, _encPlainBuffer, _encCipherBuffer);
+            Buffer.BlockCopy(_encCipherBuffer, 0, outbuf, cipherOffset, size);
             outlength = size + cipherOffset;
         }
 
@@ -152,11 +156,17 @@ namespace Shadowsocks.Encryption.Stream
                 var iv = ivLen == 0 ? new byte[0] : _decCircularBuffer.Get(ivLen); //none rc4
                 InitCipher(iv, false);
             }
-            var cipher = _decCircularBuffer.ToArray();
-            CipherUpdate(false, cipher.Length, cipher, outbuf);
-            // move pointer only
-            _decCircularBuffer.Skip(_decCircularBuffer.Size);
-            outlength = cipher.Length;
+            var size = _decCircularBuffer.Size;
+            if (size == 0)
+            {
+                outlength = 0;
+                return;
+            }
+
+            Utils.SetArrayMinSize(ref _decCipherBuffer, size);
+            _decCircularBuffer.Get(_decCipherBuffer, 0, size);
+            CipherUpdate(false, size, _decCipherBuffer, outbuf);
+            outlength = size;
             // done the decryption
         }
 
