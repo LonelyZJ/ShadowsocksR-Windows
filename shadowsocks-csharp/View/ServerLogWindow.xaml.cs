@@ -108,8 +108,27 @@ namespace Shadowsocks.View
 
         private void AutoSizeMenuItem_OnClick(object sender, RoutedEventArgs e)
         {
+            var windowState = WindowState;
+            var width = double.IsNaN(Width) || Width <= 0 ? ActualWidth : Width;
+            var height = double.IsNaN(Height) || Height <= 0 ? ActualHeight : Height;
+
+            SizeToContent = SizeToContent.Manual;
             DataGridColumnAutoSizer.AutoSizeColumns(ServerDataGrid);
-            SizeToContent = SizeToContent.Width;
+
+            if (windowState == WindowState.Normal)
+            {
+                if (width > 0)
+                {
+                    Width = width;
+                }
+
+                if (height > 0)
+                {
+                    Height = height;
+                }
+            }
+
+            WindowState = windowState;
         }
 
         private void DisconnectDirectMenuItem_OnClick(object sender, RoutedEventArgs e)
