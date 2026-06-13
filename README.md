@@ -11,4 +11,4 @@ Visual Studio Community 2026 with the .NET 10 SDK is recommended.
 
 GPLv3
 
-Copyright © 2019 - 2022 HMBSbige. Forked from ShadowsocksR by BreakWa11
+Forked from Copyright © 2019 - 2022 HMBSbige -> Forked from ShadowsocksR by BreakWa11
