@@ -3,9 +3,8 @@ using Shadowsocks.Encryption;
 using Shadowsocks.Enums;
 using Shadowsocks.Model;
 using Shadowsocks.Util;
+using Shadowsocks.View.Controls;
 using Shadowsocks.ViewModel;
-using Syncfusion.Data.Extensions;
-using Syncfusion.UI.Xaml.TreeView;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -46,7 +45,7 @@ namespace Shadowsocks.View
             _controller.ConfigChanged += controller_ConfigChanged;
             ServerConfigViewModel.ServersChanged += ServerViewModel_ServersChanged;
             _focusIndex = focusIndex;
-            ServersTreeView_OnSelectionChanged(this, new ItemSelectionChangedEventArgs());
+            ServersTreeView_OnSelectionChanged(this, new ServerTreeViewSelectionChangedEventArgs());
         }
 
         private void ServerViewModel_ServersChanged(object sender, EventArgs e)
@@ -171,15 +170,13 @@ namespace Shadowsocks.View
 
         private void MoveToSelectedItem(ServerTreeViewModel serverTreeViewModel)
         {
-            ServersTreeView.BringIntoView(serverTreeViewModel, false, true, ScrollToPosition.Center);
-            ServersTreeView.SelectedItems?.Clear();
-            ServersTreeView.SelectedItem = serverTreeViewModel;
-            ServersTreeView_OnSelectionChanged(this, new ItemSelectionChangedEventArgs());
+            ServersTreeView.SelectAndBringIntoView(serverTreeViewModel);
+            ServersTreeView_OnSelectionChanged(this, new ServerTreeViewSelectionChangedEventArgs());
         }
 
         private void AddButton_Click(object sender, RoutedEventArgs e)
         {
-            if (ServersTreeView.SelectedItem is ServerTreeViewModel st)
+            if (ServersTreeView.SelectedItemEx is ServerTreeViewModel st)
             {
                 switch (st.Type)
                 {
@@ -224,23 +221,22 @@ namespace Shadowsocks.View
 
         private void DeleteButton_Click(object sender, RoutedEventArgs e)
         {
-            var deleteItems = ServersTreeView.SelectedItems.ToArray();
+            var deleteItems = ServersTreeView.SelectedItemsEx.ToArray();
             foreach (var selectedItem in deleteItems)
             {
                 if (selectedItem is ServerTreeViewModel st)
                 {
                     ServerTreeViewModel.Remove(ServerConfigViewModel.ServersTreeViewCollection, st);
-                    ServersTreeView.SelectedItems.Clear();
-                    ServersTreeView_OnSelectionChanged(this, new ItemSelectionChangedEventArgs());
+                    ServersTreeView.SelectedItemsEx.Clear();
+                    ServersTreeView_OnSelectionChanged(this, new ServerTreeViewSelectionChangedEventArgs());
                 }
             }
         }
 
-        private void ServersTreeView_OnSelectionChanged(object sender, ItemSelectionChangedEventArgs e)
+        private void ServersTreeView_OnSelectionChanged(object sender, ServerTreeViewSelectionChangedEventArgs e)
         {
-            if (ServersTreeView.SelectedItems is not null
-                && ServersTreeView.SelectedItems.Count == 1
-                && ServersTreeView.SelectedItem is ServerTreeViewModel { Type: ServerTreeViewType.Server })
+            if (ServersTreeView.SelectedItemsEx.Count == 1
+                && ServersTreeView.SelectedItemEx is ServerTreeViewModel { Type: ServerTreeViewType.Server })
             {
                 ServerGroupBox.Visibility = Visibility.Visible;
             }
@@ -250,107 +246,109 @@ namespace Shadowsocks.View
             }
         }
 
-        private void ServersTreeView_OnItemDropping(object sender, TreeViewItemDroppingEventArgs e)
+        private void ServersTreeView_OnItemDropping(object sender, ServerTreeViewItemDroppingEventArgs e)
         {
-            if (e.TargetNode.Content is ServerTreeViewModel target)
+            var target = e.TargetItem;
+            var source = e.DraggingItems.Where(n => n is not null).ToArray();
+            if (!source.Any())
             {
-                var source = e.DraggingNodes.Where(n => n.Content is ServerTreeViewModel).Select(n => (ServerTreeViewModel)n.Content).ToArray();
-                if (!source.Any())
+                goto Skip;
+            }
+
+            if (source.Any(st => st.Type == ServerTreeViewType.Subtag))
+            {
+                if (ServerTreeViewModel.FindParentNode(ServerConfigViewModel.ServersTreeViewCollection, target) != null)
                 {
                     goto Skip;
                 }
 
-                if (source.Any(st => st.Type == ServerTreeViewType.Subtag))
+                var res = e.DraggingItems.Where(st => st.Type == ServerTreeViewType.Subtag).ToArray();
+                e.DraggingItems.Clear();
+                foreach (var item in res)
                 {
-                    if (ServerTreeViewModel.FindParentNode(ServerConfigViewModel.ServersTreeViewCollection, target) != null)
-                    {
-                        goto Skip;
-                    }
-
-                    var res = e.DraggingNodes.Where(n => n.Content is ServerTreeViewModel st && st.Type == ServerTreeViewType.Subtag).ToArray();
-                    e.DraggingNodes.Clear();
-                    res.ForEach(x => e.DraggingNodes.Add(x));
-
-                    if (e.DropPosition == DropPosition.DropAsChild)
-                    {
-                        e.DropPosition = DropPosition.DropBelow;
-                    }
-                    return;
+                    e.DraggingItems.Add(item);
                 }
-                if (source.Any(st => st.Type == ServerTreeViewType.Group))
+
+                if (e.DropPosition == ServerTreeDropPosition.AsChild)
                 {
-                    var res = e.DraggingNodes.Where(n => n.Content is ServerTreeViewModel st && st.Type == ServerTreeViewType.Group).ToArray();
-                    e.DraggingNodes.Clear();
-                    res.ForEach(x => e.DraggingNodes.Add(x));
-
-                    if (target.Type == ServerTreeViewType.Subtag)
-                    {
-                        goto Skip;
-                    }
-                    if (target.Type == ServerTreeViewType.Group)
-                    {
-                        var parent = ServerTreeViewModel.FindParentNode(ServerConfigViewModel.ServersTreeViewCollection, target);
-                        if (parent == null)
-                        {
-                            goto Skip;
-                        }
-
-                        var isSameParent = e.DraggingNodes.All(n => n.Content is ServerTreeViewModel st
-                           && ServerTreeViewModel.FindParentNode(ServerConfigViewModel.ServersTreeViewCollection, st) == parent);
-
-                        if (!isSameParent)
-                        {
-                            goto Skip;
-                        }
-
-                        if (e.DropPosition == DropPosition.DropAsChild)
-                        {
-                            e.DropPosition = DropPosition.DropBelow;
-                        }
-                        return;
-                    }
-                    goto Skip;
+                    e.DropPosition = ServerTreeDropPosition.Below;
                 }
-                // all is servers
+                return;
+            }
+            if (source.Any(st => st.Type == ServerTreeViewType.Group))
+            {
+                var res = e.DraggingItems.Where(st => st.Type == ServerTreeViewType.Group).ToArray();
+                e.DraggingItems.Clear();
+                foreach (var item in res)
+                {
+                    e.DraggingItems.Add(item);
+                }
+
                 if (target.Type == ServerTreeViewType.Subtag)
                 {
                     goto Skip;
                 }
                 if (target.Type == ServerTreeViewType.Group)
                 {
-                    var sub = ServerTreeViewModel.FindParentNode(ServerConfigViewModel.ServersTreeViewCollection, target);
-                    if (sub == null)
+                    var parent = ServerTreeViewModel.FindParentNode(ServerConfigViewModel.ServersTreeViewCollection, target);
+                    if (parent == null)
                     {
-                        return;
+                        goto Skip;
                     }
 
-                    var subName = sub.Name == I18NUtil.GetAppStringValue(@"EmptySubtag") ? string.Empty : sub.Name;
-                    var groupName = target.Name == I18NUtil.GetAppStringValue(@"EmptyGroup") ? string.Empty : target.Name;
+                    var isSameParent = e.DraggingItems.All(st =>
+                       ServerTreeViewModel.FindParentNode(ServerConfigViewModel.ServersTreeViewCollection, st) == parent);
 
-                    e.DraggingNodes.ForEach(n =>
+                    if (!isSameParent)
                     {
-                        var server = ((ServerTreeViewModel)n.Content).Server;
-                        server.Group = groupName;
-                        server.SubTag = subName;
-                    });
+                        goto Skip;
+                    }
 
-                    e.DropPosition = DropPosition.DropAsChild;
+                    if (e.DropPosition == ServerTreeDropPosition.AsChild)
+                    {
+                        e.DropPosition = ServerTreeDropPosition.Below;
+                    }
+                    return;
+                }
+                goto Skip;
+            }
+            // all is servers
+            if (target.Type == ServerTreeViewType.Subtag)
+            {
+                goto Skip;
+            }
+            if (target.Type == ServerTreeViewType.Group)
+            {
+                var sub = ServerTreeViewModel.FindParentNode(ServerConfigViewModel.ServersTreeViewCollection, target);
+                if (sub == null)
+                {
                     return;
                 }
 
-                e.DraggingNodes.ForEach(n =>
-                {
-                    var server = ((ServerTreeViewModel)n.Content).Server;
-                    server.Group = target.Server.Group;
-                    server.SubTag = target.Server.SubTag;
-                });
+                var subName = sub.Name == I18NUtil.GetAppStringValue(@"EmptySubtag") ? string.Empty : sub.Name;
+                var groupName = target.Name == I18NUtil.GetAppStringValue(@"EmptyGroup") ? string.Empty : target.Name;
 
-                if (e.DropPosition == DropPosition.DropAsChild)
+                foreach (var item in e.DraggingItems)
                 {
-                    e.DropPosition = DropPosition.DropBelow;
+                    item.Server.Group = groupName;
+                    item.Server.SubTag = subName;
                 }
+
+                e.DropPosition = ServerTreeDropPosition.AsChild;
                 return;
             }
+
+            foreach (var item in e.DraggingItems)
+            {
+                item.Server.Group = target.Server.Group;
+                item.Server.SubTag = target.Server.SubTag;
+            }
+
+            if (e.DropPosition == ServerTreeDropPosition.AsChild)
+            {
+                e.DropPosition = ServerTreeDropPosition.Below;
+            }
+            return;
 Skip:
             e.Handled = true;
         }

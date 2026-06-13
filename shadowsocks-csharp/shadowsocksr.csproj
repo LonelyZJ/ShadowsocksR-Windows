@@ -55,8 +55,6 @@
     <PackageReference Include="RouteMatcher" Version="1.0.0" />
     <PackageReference Include="RunAtStartup" Version="5.0.2" />
     <PackageReference Include="Shadowsocks.Protocol" Version="1.0.2" />
-    <PackageReference Include="Syncfusion.SfGrid.WPF" Version="29.2.11" />
-    <PackageReference Include="Syncfusion.SfTreeView.WPF" Version="29.2.11" />
     <PackageReference Include="URIScheme" Version="5.0.0" />
     <PackageReference Include="WindowsProxy" Version="6.0.0" />
     <PackageReference Include="WpfColorFontDialog" Version="1.0.8" />
@@ -143,13 +141,5 @@
       <SubType>Designer</SubType>
     </Page>
   </ItemGroup>
-
-  <Target Name="PreBuild" BeforeTargets="PreBuildEvent" Condition="'$(SyncfusionLicenseKey)' != ''">
-    <Exec WorkingDirectory="$(ProjectDir)" Command="&quot;$(ProjectDir)SyncfusionLicenseRegister.bat&quot; PreBuild Program.cs" />
-  </Target>
-
-  <Target Name="PostBuild" AfterTargets="PostBuildEvent" Condition="'$(SyncfusionLicenseKey)' != ''">
-    <Exec WorkingDirectory="$(ProjectDir)" Command="&quot;$(ProjectDir)SyncfusionLicenseRegister.bat&quot; PostBuild Program.cs" />
-  </Target>
 
 </Project>

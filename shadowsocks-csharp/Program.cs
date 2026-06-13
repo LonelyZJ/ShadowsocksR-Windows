@@ -40,8 +40,6 @@ namespace Shadowsocks
             SystemEvents.PowerModeChanged += SystemEvents_PowerModeChanged;
             app.Exit += App_Exit;
 
-            Syncfusion.Licensing.SyncfusionLicenseProvider.RegisterLicense(@"##SyncfusionLicense##");
-
             Global.LoadConfig();
 
             I18NUtil.SetLanguage(Global.GuiConfig.LangName);

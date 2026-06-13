@@ -30,14 +30,6 @@ dotnet test UnitTest/UnitTest.csproj --filter "FullyQualifiedName~UnitTest.UnitT
 dotnet test UnitTest/UnitTest.csproj --filter "FullyQualifiedName~EncryptionTest"
 ```
 
-CI 构建还需要配置私有 NuGet 源，用于 Syncfusion 许可依赖：
-
-```powershell
-dotnet nuget add source https://nuget.pkg.github.com/HMBSbige/index.json -n GitHub-HMBSbige -u HMBSbige -p <TOKEN> --store-password-in-clear-text
-```
-
-CI 环境必须设置 `SyncfusionLicenseKey` 环境变量。Syncfusion 许可会影响构建和运行；单元测试通常不依赖该许可。
-
 ## 项目概览
 
 ShadowsocksR for Windows 是一个基于 .NET 10 WPF 的桌面应用，实现 ShadowsocksR 代理协议。应用通过系统托盘 GUI 管理 SSR 服务器，并集成 Windows 系统代理设置。项目采用 GPLv3 许可证。
@@ -112,7 +104,7 @@ ShadowsocksR for Windows 是一个基于 .NET 10 WPF 的桌面应用，实现 Sh
 
 关键窗口：
 
-- `ServerConfigWindow`：服务器树和详情编辑器，服务器树使用 Syncfusion `SfTreeView`
+- `ServerConfigWindow`：服务器树和详情编辑器，服务器树使用项目内纯 WPF `ServerTreeView`
 - `SettingsWindow`：全局代理设置、负载均衡、DNS、端口转发
 - `SubscribeWindow`：订阅 URL 管理
 
@@ -148,7 +140,6 @@ I18N 逻辑位于 `Util/I18NUtil.cs`。它从 `I18N/WindowName.{lang}.xaml` 加�
 - `auth_sha1` 和 `auth_sha1_v2` 混淆协议只在 DEBUG 构建中编译。
 - 自包含构建需要设置 csproj 中的 `SelfContained` 属性，并触发 `SelfContained`、`Is64Bit` 编译符号。
 - 原生 DLL 运行时会从嵌入资源解压。
-- Syncfusion 构建和运行都需要许可证。构建前后事件会运行 `SyncfusionLicenseRegister.bat`。
 - `dotnet publish` 后必须运行 `Build/DotNetDllPathPatcher.ps1`，对 exe 进行二进制修补，使其从 `bin\` 子目录加载 DLL，以规避 Windows 路径长度限制。
 
 ## 开发注意事项
@@ -156,5 +147,5 @@ I18N 逻辑位于 `Util/I18NUtil.cs`。它从 `I18N/WindowName.{lang}.xaml` 加�
 - 优先保持现有架构和代码风格，不要为局部改动引入无关重构。
 - 修改网络、加密、混淆或配置序列化逻辑时，应补充或运行相关单元测试。
 - 修改 UI 时注意同步 I18N 资源，避免只更新默认语言文本。
-- 不要提交真实订阅地址、服务器凭据、Syncfusion key 或 GitHub token。
+- 不要提交真实订阅地址、服务器凭据或 GitHub token。
 - 发布相关改动需要验证 `build.ps1`、框架依赖发布和对应自包含目标是否仍能工作。
