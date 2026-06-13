@@ -1,3 +1,4 @@
+using Microsoft.VisualStudio.Threading;
 using Shadowsocks.Model;
 using Shadowsocks.Model.Transfer;
 using Shadowsocks.Proxy;
@@ -56,7 +57,7 @@ namespace Shadowsocks.Controller.Service
             Task.Run(() =>
             {
                 var unused = new ProxyAuthHandler(_config, _transfer, _ipRange, firstPacket, length, socket);
-            });
+            }).Forget();
             return true;
         }
     }

@@ -5,9 +5,11 @@ using System.Drawing.Drawing2D;
 using System.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices;
+using System.Threading;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using System.Windows.Threading;
 using Color = System.Drawing.Color;
 using Size = System.Drawing.Size;
 
@@ -160,6 +162,17 @@ namespace Shadowsocks.Util
         public static bool IsScrolledToEnd(this TextBox textBox)
         {
             return Math.Abs(textBox.VerticalOffset + textBox.ViewportHeight - textBox.ExtentHeight) < 0.001;
+        }
+
+        public static void InvokeOnUiThread(this Dispatcher dispatcher, Action action, DispatcherPriority priority = DispatcherPriority.Normal)
+        {
+            if (dispatcher == null)
+            {
+                return;
+            }
+
+            var context = new DispatcherSynchronizationContext(dispatcher, priority);
+            context.Post(_ => action(), null);
         }
     }
 }

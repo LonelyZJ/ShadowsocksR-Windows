@@ -1,3 +1,4 @@
+using Microsoft.VisualStudio.Threading;
 using Shadowsocks.Enums;
 using Shadowsocks.Obfs;
 using Shadowsocks.Util;
@@ -8,6 +9,7 @@ using System.IO;
 using System.Linq;
 using System.Net.Sockets;
 using System.Text;
+using System.Threading.Tasks;
 
 namespace Shadowsocks.Controller
 {
@@ -112,14 +114,23 @@ namespace Shadowsocks.Controller
             {
                 if (file != LogFile)
                 {
-                    FileManager.ZipCompressToFile(file).ContinueWith(task =>
-                    {
-                        if (task.Result)
-                        {
-                            File.Delete(file);
-                        }
-                    });
+                    CompressOldLogFileAsync(file).Forget();
                 }
+            }
+        }
+
+        private static async Task CompressOldLogFileAsync(string file)
+        {
+            try
+            {
+                if (await FileManager.ZipCompressToFileAsync(file))
+                {
+                    File.Delete(file);
+                }
+            }
+            catch (Exception e)
+            {
+                LogUsefulException(e);
             }
         }
 

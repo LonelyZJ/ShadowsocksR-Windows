@@ -1,3 +1,4 @@
+using Microsoft.VisualStudio.Threading;
 using Shadowsocks.Model;
 using System;
 using System.IO;
@@ -60,7 +61,7 @@ namespace Shadowsocks.Controller.Service
             {
                 ((FileSystemWatcher)sender).EnableRaisingEvents = false;
                 Logging.Info($@"Detected: user rule file '{e.Name}' was {e.ChangeType.ToString().ToLower()}.");
-                Task.Delay(10).ContinueWith(task => UserRuleChanged(this, EventArgs.Empty));
+                RaiseUserRuleChangedAsync().Forget();
             }
             finally
             {
@@ -79,12 +80,24 @@ namespace Shadowsocks.Controller.Service
             {
                 ((FileSystemWatcher)sender).EnableRaisingEvents = false;
                 Logging.Info($@"Detected: '{e.Name}' was {e.ChangeType.ToString().ToLower()}.");
-                Task.Delay(10).ContinueWith(task => ChnIpChanged(this, EventArgs.Empty));
+                RaiseChnIpChangedAsync().Forget();
             }
             finally
             {
                 ((FileSystemWatcher)sender).EnableRaisingEvents = true;
             }
+        }
+
+        private async Task RaiseUserRuleChangedAsync()
+        {
+            await Task.Delay(10);
+            UserRuleChanged?.Invoke(this, EventArgs.Empty);
+        }
+
+        private async Task RaiseChnIpChangedAsync()
+        {
+            await Task.Delay(10);
+            ChnIpChanged?.Invoke(this, EventArgs.Empty);
         }
     }
 }

@@ -48,10 +48,13 @@
 
   <ItemGroup>
     <PackageReference Include="ARSoft.Tools.Net" Version="3.0.0" />
+    <PackageReference Include="BouncyCastle.Cryptography" Version="2.6.2" />
     <PackageReference Include="CryptoBase" Version="1.7.2" />
     <PackageReference Include="Hardcodet.NotifyIcon.Wpf" Version="2.0.1" />
     <PackageReference Include="HMBSbige.SingleInstance" Version="6.0.1" />
     <PackageReference Include="HMBSbige.UpdateChecker" Version="8.0.1" />
+    <PackageReference Include="Microsoft.VisualStudio.Threading" Version="17.14.15" />
+    <PackageReference Include="Microsoft.VisualStudio.Threading.Analyzers" Version="17.14.15" PrivateAssets="all" IncludeAssets="runtime; build; native; contentfiles; analyzers" />
     <PackageReference Include="RouteMatcher" Version="1.0.0" />
     <PackageReference Include="RunAtStartup" Version="5.0.2" />
     <PackageReference Include="Shadowsocks.Protocol" Version="1.0.2" />

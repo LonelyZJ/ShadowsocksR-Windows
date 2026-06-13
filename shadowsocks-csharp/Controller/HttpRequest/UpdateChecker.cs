@@ -1,5 +1,6 @@
 using Shadowsocks.Model;
 using System;
+using System.Threading.Tasks;
 using UpdateChecker;
 
 namespace Shadowsocks.Controller.HttpRequest
@@ -36,7 +37,7 @@ namespace Shadowsocks.Controller.HttpRequest
         @"";
 #endif
 
-        public async void Check(Configuration config, bool notifyNoFound)
+        public async Task CheckAsync(Configuration config, bool notifyNoFound)
         {
             try
             {

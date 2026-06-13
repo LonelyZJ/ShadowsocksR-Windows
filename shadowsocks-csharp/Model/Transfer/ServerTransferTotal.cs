@@ -1,3 +1,4 @@
+using Microsoft.VisualStudio.Threading;
 using Shadowsocks.Util;
 using System;
 using System.Collections.Generic;
@@ -70,7 +71,7 @@ namespace Shadowsocks.Model.Transfer
                     .ToDictionary(pair => pair.Key, pair => pair.Value);
                 }
                 var jsonString = JsonUtils.Serialize(config.Servers, true);
-                File.WriteAllTextAsync(LogFile, jsonString);
+                File.WriteAllTextAsync(LogFile, jsonString).Forget();
             }
             catch (IOException e)
             {

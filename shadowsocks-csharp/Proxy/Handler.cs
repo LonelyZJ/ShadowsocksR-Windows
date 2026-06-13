@@ -1,3 +1,4 @@
+using Microsoft.VisualStudio.Threading;
 using Shadowsocks.Controller;
 using Shadowsocks.Controller.Service;
 using Shadowsocks.Enums;
@@ -397,7 +398,7 @@ namespace Shadowsocks.Proxy
 
                 if (cfg.ReconnectTimes > 0)
                 {
-                    Task.Run(Connect);
+                    Task.Run(Connect).Forget();
                 }
                 else
                 {
@@ -610,7 +611,7 @@ namespace Shadowsocks.Proxy
 
         public override void Shutdown()
         {
-            Task.Run(Close);
+            Task.Run(Close).Forget();
         }
 
         public void Close()
@@ -1627,7 +1628,7 @@ namespace Shadowsocks.Proxy
                                 LogException(ex);
                                 Close();
                             }
-                        });
+                        }).Forget();
                     }
                 }
                 else

@@ -41,7 +41,7 @@ namespace UnitTest
         }
 
         [TestMethod]
-        public void TestStreamOpenSSLEncryption()
+        public async Task TestStreamOpenSSLEncryption()
         {
             var failed = false;
             // run it once before the multi-threading test to initialize global tables
@@ -54,7 +54,7 @@ namespace UnitTest
                 {
                     continue;
                 }
-                var t = new Task(() =>
+                var t = Task.Run(() =>
                 {
                     try
                     {
@@ -68,10 +68,9 @@ namespace UnitTest
                     }
                 });
                 tasks.Add(t);
-                t.Start();
             }
 
-            Task.WaitAll(tasks.ToArray());
+            await Task.WhenAll(tasks);
             Assert.IsFalse(failed);
         }
 
@@ -86,7 +85,7 @@ namespace UnitTest
         }
 
         [TestMethod]
-        public void TestStreamSodiumEncryption()
+        public async Task TestStreamSodiumEncryption()
         {
             var failed = false;
             // run it once before the multi-threading test to initialize global tables
@@ -98,7 +97,7 @@ namespace UnitTest
                 {
                     continue;
                 }
-                var t = new Task(() =>
+                var t = Task.Run(() =>
                 {
                     try
                     {
@@ -112,10 +111,9 @@ namespace UnitTest
                     }
                 });
                 tasks.Add(t);
-                t.Start();
             }
 
-            Task.WaitAll(tasks.ToArray());
+            await Task.WhenAll(tasks);
             Assert.IsFalse(failed);
         }
 

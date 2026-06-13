@@ -98,7 +98,7 @@ namespace Shadowsocks.Controller
         }
 
         [SuppressMessage("ReSharper", "AssignNullToNotNullAttribute")]
-        public static async Task<bool> ZipCompressToFile(string path)
+        public static async Task<bool> ZipCompressToFileAsync(string path)
         {
             try
             {

@@ -8,6 +8,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Threading.Tasks;
 
 namespace Shadowsocks.Controller.HttpRequest
 {
@@ -37,7 +38,7 @@ namespace Shadowsocks.Controller.HttpRequest
 
         #region GfwList
 
-        public async void UpdatePacFromGfwList(Configuration config)
+        public async Task UpdatePacFromGfwListAsync(Configuration config)
         {
             Logging.Info($@"Checking GFWList from {GfwlistUrl}");
             try
@@ -109,7 +110,7 @@ namespace Shadowsocks.Controller.HttpRequest
 
         #region OnlinePAC
 
-        public async void UpdateOnlinePac(Configuration config, string url)
+        public async Task UpdateOnlinePacAsync(Configuration config, string url)
         {
             try
             {

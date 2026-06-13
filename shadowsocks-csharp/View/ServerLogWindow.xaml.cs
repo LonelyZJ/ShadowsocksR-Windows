@@ -79,7 +79,7 @@ namespace Shadowsocks.View
             ServerLogViewModel.ReadConfig();
             ServerDataGrid.Items.Refresh();
 
-            _ = Dispatcher.CurrentDispatcher.InvokeAsync(() =>
+            Dispatcher.CurrentDispatcher.InvokeOnUiThread(() =>
             {
                 if (isFirstLoad && ServerLogViewModel.SelectedServer != null)
                 {

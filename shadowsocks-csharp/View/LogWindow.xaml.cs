@@ -1,3 +1,4 @@
+using Microsoft.VisualStudio.Threading;
 using Shadowsocks.Controller;
 using Shadowsocks.Util;
 using System;
@@ -109,10 +110,10 @@ namespace Shadowsocks.View
 
         private void Window_Loaded(object sender, RoutedEventArgs e)
         {
-            SyncLog(_cts);
+            SyncLogAsync(_cts).Forget();
         }
 
-        private async void SyncLog(CancellationTokenSource cts)
+        private async Task SyncLogAsync(CancellationTokenSource cts)
         {
             while (true)
             {

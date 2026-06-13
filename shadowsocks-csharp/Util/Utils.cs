@@ -6,7 +6,6 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
-using System.Net;
 using System.Reflection;
 using System.Text;
 
@@ -182,19 +181,6 @@ namespace Shadowsocks.Util
                     continue;
                 }
                 yield return line;
-            }
-        }
-
-        public static void SetTls()
-        {
-            if (!OperatingSystem.IsWindows())
-            {
-                return;
-            }
-            ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12;
-            if (OperatingSystem.IsWindowsVersionAtLeast(10, 0, 20170))
-            {
-                ServicePointManager.SecurityProtocol |= SecurityProtocolType.Tls13;
             }
         }
     }

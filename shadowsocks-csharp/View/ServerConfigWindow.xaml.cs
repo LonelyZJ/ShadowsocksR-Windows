@@ -367,7 +367,7 @@ Skip:
             if (e.ChangedButton == MouseButton.Left)
             {
                 var textBox = (TextBox)sender;
-                textBox.Dispatcher?.InvokeAsync(() => { textBox.SelectAll(); });
+                textBox.Dispatcher.InvokeOnUiThread(() => { textBox.SelectAll(); });
             }
         }
 

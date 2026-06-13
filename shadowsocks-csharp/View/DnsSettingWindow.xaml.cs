@@ -1,5 +1,8 @@
+using Microsoft.VisualStudio.Threading;
 using Shadowsocks.Util;
+using Shadowsocks.Controller;
 using Shadowsocks.ViewModel;
+using System;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
@@ -72,18 +75,29 @@ namespace Shadowsocks.View
         {
             if (sender is Button button && DnsSettingViewModel.CurrentClient != null)
             {
-                var client = DnsSettingViewModel.CurrentClient;
-                var domain = DomainTextBox.Text;
-                button.IsEnabled = false;
-                AnswerTextBox.Text = string.Empty;
-                Task.Run(async () =>
-                {
-                    var res = await client.QueryIpAddressAsync(domain, default);
-                    Dispatcher?.InvokeAsync(() => { AnswerTextBox.Text = $@"{res}"; });
-                }).ContinueWith(task =>
-                {
-                    Dispatcher?.InvokeAsync(() => { button.IsEnabled = true; });
-                });
+                TestDnsAsync(button).Forget();
+            }
+        }
+
+        private async Task TestDnsAsync(Button button)
+        {
+            var client = DnsSettingViewModel.CurrentClient;
+            var domain = DomainTextBox.Text;
+            button.IsEnabled = false;
+            AnswerTextBox.Text = string.Empty;
+            try
+            {
+                var res = await client.QueryIpAddressAsync(domain, default);
+                AnswerTextBox.Text = $@"{res}";
+            }
+            catch (Exception ex)
+            {
+                Logging.LogUsefulException(ex);
+                AnswerTextBox.Text = ex.Message;
+            }
+            finally
+            {
+                button.IsEnabled = true;
             }
         }
     }

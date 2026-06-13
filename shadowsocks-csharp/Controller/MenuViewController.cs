@@ -1,4 +1,5 @@
 using Hardcodet.Wpf.TaskbarNotification;
+using Microsoft.VisualStudio.Threading;
 using Microsoft.Win32;
 using Shadowsocks.Controller.HttpRequest;
 using Shadowsocks.Controller.Service;
@@ -34,6 +35,11 @@ namespace Shadowsocks.Controller
                 this.sender = sender;
                 this.e = e;
             }
+        }
+
+        private static void RunInBackground(Action action)
+        {
+            Task.Run(action).Forget();
         }
 
         // yes this is just a menu view controller
@@ -134,7 +140,7 @@ namespace Shadowsocks.Controller
             var cfg = Global.GuiConfig;
             if (cfg.AutoCheckUpdate)
             {
-                updateChecker.Check(cfg, false);
+                updateChecker.CheckAsync(cfg, false).Forget();
             }
 
             Global.UpdateSubscribeManager.CreateTask(cfg, Global.UpdateNodeChecker, false);
@@ -572,7 +578,7 @@ namespace Shadowsocks.Controller
 
         private void updateChecker_NewVersionFound(object sender, EventArgs e)
         {
-            Application.Current.Dispatcher?.InvokeAsync(() =>
+            Application.Current.Dispatcher.InvokeOnUiThread(() =>
             {
                 if (updateChecker.Found)
                 {
@@ -963,7 +969,7 @@ namespace Shadowsocks.Controller
 
         private void Import_Click(object sender, RoutedEventArgs e)
         {
-            Task.Run(() =>
+            RunInBackground(() =>
             {
                 var dlg = new OpenFileDialog
                 {
@@ -1069,47 +1075,47 @@ namespace Shadowsocks.Controller
 
         private void NoModifyItem_Click(object sender, RoutedEventArgs e)
         {
-            Task.Run(() => { controller.ToggleMode(ProxyMode.NoModify); });
+            RunInBackground(() => { controller.ToggleMode(ProxyMode.NoModify); });
         }
 
         private void EnableItem_Click(object sender, RoutedEventArgs e)
         {
-            Task.Run(() => { controller.ToggleMode(ProxyMode.Direct); });
+            RunInBackground(() => { controller.ToggleMode(ProxyMode.Direct); });
         }
 
         private void GlobalModeItem_Click(object sender, RoutedEventArgs e)
         {
-            Task.Run(() => { controller.ToggleMode(ProxyMode.Global); });
+            RunInBackground(() => { controller.ToggleMode(ProxyMode.Global); });
         }
 
         private void PACModeItem_Click(object sender, RoutedEventArgs e)
         {
-            Task.Run(() => { controller.ToggleMode(ProxyMode.Pac); });
+            RunInBackground(() => { controller.ToggleMode(ProxyMode.Pac); });
         }
 
         private void RuleBypassLanItem_Click(object sender, RoutedEventArgs e)
         {
-            Task.Run(() => { controller.ToggleRuleMode(ProxyRuleMode.BypassLan); });
+            RunInBackground(() => { controller.ToggleRuleMode(ProxyRuleMode.BypassLan); });
         }
 
         private void RuleBypassChinaItem_Click(object sender, RoutedEventArgs e)
         {
-            Task.Run(() => { controller.ToggleRuleMode(ProxyRuleMode.BypassLanAndChina); });
+            RunInBackground(() => { controller.ToggleRuleMode(ProxyRuleMode.BypassLanAndChina); });
         }
 
         private void RuleBypassNotChinaItem_Click(object sender, RoutedEventArgs e)
         {
-            Task.Run(() => { controller.ToggleRuleMode(ProxyRuleMode.BypassLanAndNotChina); });
+            RunInBackground(() => { controller.ToggleRuleMode(ProxyRuleMode.BypassLanAndNotChina); });
         }
 
         private void RuleUserItem_Click(object sender, RoutedEventArgs e)
         {
-            Task.Run(() => { controller.ToggleRuleMode(ProxyRuleMode.UserCustom); });
+            RunInBackground(() => { controller.ToggleRuleMode(ProxyRuleMode.UserCustom); });
         }
 
         private void RuleBypassDisableItem_Click(object sender, RoutedEventArgs e)
         {
-            Task.Run(() => { controller.ToggleRuleMode(ProxyRuleMode.Disable); });
+            RunInBackground(() => { controller.ToggleRuleMode(ProxyRuleMode.Disable); });
         }
 
         private void SelectRandomItem_Click(object sender, RoutedEventArgs e)
@@ -1117,11 +1123,11 @@ namespace Shadowsocks.Controller
             SelectRandomItem.IsChecked = !SelectRandomItem.IsChecked;
             if (SelectRandomItem.IsChecked)
             {
-                Task.Run(() => { controller.ToggleSelectRandom(true); });
+                RunInBackground(() => { controller.ToggleSelectRandom(true); });
             }
             else
             {
-                Task.Run(() => { controller.ToggleSelectRandom(false); });
+                RunInBackground(() => { controller.ToggleSelectRandom(false); });
             }
         }
 
@@ -1142,11 +1148,11 @@ namespace Shadowsocks.Controller
             sameHostForSameTargetItem.IsChecked = !sameHostForSameTargetItem.IsChecked;
             if (sameHostForSameTargetItem.IsChecked)
             {
-                Task.Run(() => { controller.ToggleSameHostForSameTargetRandom(true); });
+                RunInBackground(() => { controller.ToggleSameHostForSameTargetRandom(true); });
             }
             else
             {
-                Task.Run(() => { controller.ToggleSameHostForSameTargetRandom(false); });
+                RunInBackground(() => { controller.ToggleSameHostForSameTargetRandom(false); });
             }
         }
 
@@ -1203,7 +1209,7 @@ namespace Shadowsocks.Controller
         {
             var item = (MenuItem)sender;
             var index = (int)item.Tag;
-            Task.Run(() =>
+            RunInBackground(() =>
             {
                 controller.DisconnectAllConnections(true);
                 controller.SelectServerIndex(index);
@@ -1212,7 +1218,7 @@ namespace Shadowsocks.Controller
 
         private void CheckUpdate_Click(object sender, RoutedEventArgs e)
         {
-            updateChecker.Check(Global.GuiConfig, true);
+            updateChecker.CheckAsync(Global.GuiConfig, true).Forget();
         }
 
         private void CheckNodeUpdate_Click(object sender, RoutedEventArgs e)
@@ -1242,7 +1248,7 @@ namespace Shadowsocks.Controller
 
         private void DisconnectCurrent_Click(object sender, RoutedEventArgs e)
         {
-            Task.Run(() => { controller.DisconnectAllConnections(); });
+            RunInBackground(() => { controller.DisconnectAllConnections(); });
         }
 
         public void ImportAddress(string text)
@@ -1288,7 +1294,7 @@ namespace Shadowsocks.Controller
 
         private void ScanQRCodeItem_Click(object sender, RoutedEventArgs e)
         {
-            Task.Run(() =>
+            RunInBackground(() =>
             {
                 var w = (int)SystemParameters.VirtualScreenWidth;
                 var h = (int)SystemParameters.VirtualScreenHeight;
@@ -1326,7 +1332,7 @@ namespace Shadowsocks.Controller
                     {
                         var success = controller.AddServerBySsUrl(result.Text);
                         var successSub = controller.AddSubscribeUrl(result.Text);
-                        Application.Current.Dispatcher?.InvokeAsync(() =>
+                        Application.Current.Dispatcher.InvokeOnUiThread(() =>
                         {
                             var splash = new QRCodeSplashWindow();
                             if (successSub)

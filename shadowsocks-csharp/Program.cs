@@ -1,4 +1,5 @@
 using CryptoBase;
+using Microsoft.VisualStudio.Threading;
 using Microsoft.Win32;
 using Shadowsocks.Controller;
 using Shadowsocks.Enums;
@@ -50,8 +51,6 @@ namespace Shadowsocks
             // Logging
             Logging.DefaultOut = Console.Out;
             Logging.DefaultError = Console.Error;
-
-            Utils.SetTls();
 
             Global.ViewController = new MenuViewController(Global.Controller);
             SystemEvents.SessionEnding += Global.ViewController.Quit_Click;
@@ -124,7 +123,7 @@ namespace Shadowsocks
                             {
                                 Logging.LogUsefulException(ex);
                             }
-                        });
+                        }).Forget();
                     }
                     break;
                 }
@@ -158,11 +157,29 @@ namespace Shadowsocks
         {
             try
             {
-                service.SendMessageToFirstInstanceAsync(command).GetAwaiter().GetResult();
+                using var completed = new ManualResetEventSlim();
+                SendCommandAsync(service, command, completed).Forget();
+                completed.Wait();
             }
             catch
             {
                 // ignored
+            }
+        }
+
+        private static async Task SendCommandAsync(ISingleInstanceService service, string command, ManualResetEventSlim completed)
+        {
+            try
+            {
+                await service.SendMessageToFirstInstanceAsync(command);
+            }
+            catch
+            {
+                // ignored
+            }
+            finally
+            {
+                completed.Set();
             }
         }
 
@@ -179,7 +196,7 @@ namespace Shadowsocks
                                 I18NUtil.GetAppStringValue(@"SuccessiveInstancesMessage2"),
                     I18NUtil.GetAppStringValue(@"SuccessiveInstancesCaption"), MessageBoxButton.OK, MessageBoxImage.Information);
             }
-            Application.Current.Dispatcher?.InvokeAsync(() =>
+            Application.Current.Dispatcher.InvokeOnUiThread(() =>
             {
                 Global.ViewController.ImportAddress(string.Join(Environment.NewLine, args));
             });

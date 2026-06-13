@@ -1,3 +1,4 @@
+using Microsoft.VisualStudio.Threading;
 using System;
 using System.Diagnostics;
 using System.Drawing;
@@ -33,10 +34,10 @@ namespace Shadowsocks.View
             _y = Top;
             _w = Width;
             _h = Height;
-            Splash();
+            SplashAsync().Forget();
         }
 
-        private async void Splash()
+        private async Task SplashAsync()
         {
             var sw = Stopwatch.StartNew();
             var interval = (int)(AnimationTime * 1000 / AnimationSteps);

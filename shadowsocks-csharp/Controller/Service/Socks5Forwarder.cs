@@ -1,3 +1,4 @@
+using Microsoft.VisualStudio.Threading;
 using Shadowsocks.Enums;
 using Shadowsocks.Model;
 using Shadowsocks.Proxy;
@@ -631,7 +632,7 @@ namespace Shadowsocks.Controller.Service
 
             public override void Shutdown()
             {
-                Task.Run(Close);
+                Task.Run(Close).Forget();
             }
         }
     }

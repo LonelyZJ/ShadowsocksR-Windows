@@ -1,3 +1,4 @@
+using Microsoft.VisualStudio.Threading;
 using Shadowsocks.Properties;
 using System;
 using System.IO;
@@ -102,7 +103,7 @@ namespace Shadowsocks.Controller.Service
             {
                 ((FileSystemWatcher)sender).EnableRaisingEvents = false;
                 Logging.Info($@"Detected: PAC file '{e.Name}' was {e.ChangeType.ToString().ToLower()}.");
-                Task.Delay(10).ContinueWith(task => { PACFileChanged(this, EventArgs.Empty); });
+                RaisePacFileChangedAsync().Forget();
             }
             finally
             {
@@ -121,7 +122,7 @@ namespace Shadowsocks.Controller.Service
             {
                 ((FileSystemWatcher)sender).EnableRaisingEvents = false;
                 Logging.Info($@"Detected: User Rule file '{e.Name}' was {e.ChangeType.ToString().ToLower()}.");
-                Task.Delay(10).ContinueWith(task => { UserRuleFileChanged(this, EventArgs.Empty); });
+                RaiseUserRuleFileChangedAsync().Forget();
             }
             finally
             {
@@ -129,5 +130,17 @@ namespace Shadowsocks.Controller.Service
             }
         }
         #endregion
+
+        private async Task RaisePacFileChangedAsync()
+        {
+            await Task.Delay(10);
+            PACFileChanged?.Invoke(this, EventArgs.Empty);
+        }
+
+        private async Task RaiseUserRuleFileChangedAsync()
+        {
+            await Task.Delay(10);
+            UserRuleFileChanged?.Invoke(this, EventArgs.Empty);
+        }
     }
 }

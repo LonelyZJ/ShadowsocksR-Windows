@@ -1,3 +1,4 @@
+using Microsoft.VisualStudio.Threading;
 using Shadowsocks.Controller.HttpRequest;
 using Shadowsocks.Controller.Service;
 using Shadowsocks.Enums;
@@ -91,7 +92,7 @@ namespace Shadowsocks.Controller
         {
             if (servers != null)
             {
-                Application.Current.Dispatcher?.InvokeAsync(() =>
+                Application.Current.Dispatcher.InvokeOnUiThread(() =>
                 {
                     foreach (var server in servers)
                     {
@@ -333,7 +334,7 @@ namespace Shadowsocks.Controller
         public void SaveAndNotifyChanged()
         {
             Global.SaveConfig();
-            Application.Current.Dispatcher?.InvokeAsync(() => { ConfigChanged?.Invoke(this, EventArgs.Empty); });
+            Application.Current.Dispatcher.InvokeOnUiThread(() => { ConfigChanged?.Invoke(this, EventArgs.Empty); });
         }
 
         /// <summary>
@@ -418,12 +419,12 @@ namespace Shadowsocks.Controller
 
         public void UpdatePACFromGFWList()
         {
-            _gfwListUpdater?.UpdatePacFromGfwList(Global.GuiConfig);
+            _gfwListUpdater?.UpdatePacFromGfwListAsync(Global.GuiConfig).Forget();
         }
 
         public void UpdatePACFromOnlinePac(string url)
         {
-            _gfwListUpdater?.UpdateOnlinePac(Global.GuiConfig, url);
+            _gfwListUpdater?.UpdateOnlinePacAsync(Global.GuiConfig, url).Forget();
         }
 
         private void ReloadPacServer()
@@ -511,7 +512,7 @@ namespace Shadowsocks.Controller
 
             LoadPortMap();
 
-            Application.Current.Dispatcher?.InvokeAsync(() => { ConfigChanged?.Invoke(this, EventArgs.Empty); });
+            Application.Current.Dispatcher.InvokeOnUiThread(() => { ConfigChanged?.Invoke(this, EventArgs.Empty); });
 
             UpdateSystemProxy();
         }

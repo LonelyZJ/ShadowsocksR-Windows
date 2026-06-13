@@ -1,4 +1,5 @@
 using Shadowsocks.Model;
+using Shadowsocks.Util;
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
@@ -101,7 +102,7 @@ namespace Shadowsocks.View.Controls
 
             ExpandPath(item);
             SetSelection(item, false);
-            _ = Dispatcher.InvokeAsync(() =>
+            Dispatcher.InvokeOnUiThread(() =>
             {
                 UpdateLayout();
                 var container = GetContainerFromItem(item);
