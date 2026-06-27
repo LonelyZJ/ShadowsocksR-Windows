@@ -1,11 +1,13 @@
 using Shadowsocks.Controller;
 using Shadowsocks.Controller.HttpRequest;
 using Shadowsocks.Controller.Service;
+using Shadowsocks.Enums;
 using Shadowsocks.Util;
 using System;
 using System.IO;
 using System.Net;
 using System.Net.Sockets;
+using System.Text;
 using System.Text.Json;
 
 namespace Shadowsocks.Model
@@ -13,6 +15,7 @@ namespace Shadowsocks.Model
     public static class Global
     {
         private const string ConfigFile = @"gui-config.json";
+        private static readonly Encoding ConfigEncoding = new UTF8Encoding(false);
 
         public static bool OSSupportsLocalIPv6 => Socket.OSSupportsIPv6;
 
@@ -36,22 +39,38 @@ namespace Shadowsocks.Model
 
         public static Configuration LoadFile(string filename)
         {
-            Configuration config;
-            try
+            if (TryLoadConfiguration(filename, out var config, out var loadError))
             {
-                if (File.Exists(filename))
-                {
-                    var configContent = File.ReadAllText(filename);
-                    config = Load(configContent);
-                    if (config != null)
-                    {
-                        return config;
-                    }
-                }
+                return config;
             }
-            catch (Exception e)
+
+            var backupPath = AtomicFile.BackupPath(filename);
+            if (TryLoadConfiguration(backupPath, out config, out var backupError))
             {
-                Console.WriteLine(e);
+                Log(LogLevel.Warn, $@"Failed to load {filename}, restored from {backupPath}. {loadError}");
+                try
+                {
+                    AtomicFile.WriteAllTextAtomic(filename, JsonUtils.Serialize(config, true), ConfigEncoding);
+                }
+                catch (Exception e)
+                {
+                    Log(LogLevel.Warn, $@"Failed to restore {filename} from backup.");
+                    Logging.LogUsefulException(e);
+                    Console.Error.WriteLine(e);
+                }
+
+                return config;
+            }
+
+            if (backupError != null && backupError is not FileNotFoundException)
+            {
+                Log(LogLevel.Error, $@"Failed to load backup {backupPath}. {backupError}");
+                AtomicFile.PreserveCorruptFile(backupPath);
+            }
+
+            if (loadError != null && loadError is not FileNotFoundException)
+            {
+                Log(LogLevel.Error, $@"Failed to load {filename}. {loadError}");
             }
 
             config = new Configuration();
@@ -82,6 +101,36 @@ namespace Shadowsocks.Model
             return null;
         }
 
+        private static bool TryLoadConfiguration(string filename, out Configuration config, out Exception error)
+        {
+            config = null;
+            if (!AtomicFile.TryReadValidJson<Configuration>(filename, out var loaded, out error))
+            {
+                if (error is not FileNotFoundException)
+                {
+                    AtomicFile.PreserveCorruptFile(filename);
+                }
+
+                return false;
+            }
+
+            loaded.FixConfiguration();
+            config = loaded;
+            return true;
+        }
+
+        private static void Log(LogLevel level, string message)
+        {
+            try
+            {
+                Logging.Log(level, message);
+            }
+            catch
+            {
+                Console.Error.WriteLine($@"[{level}] {message}");
+            }
+        }
+
         public static void LoadConfig()
         {
             GuiConfig = Load();
@@ -101,11 +150,12 @@ namespace Shadowsocks.Model
             try
             {
                 var jsonString = JsonUtils.Serialize(GuiConfig, true);
-                File.WriteAllText(ConfigFile, jsonString);
+                AtomicFile.WriteAllTextAtomic(ConfigFile, jsonString, ConfigEncoding);
             }
-            catch (IOException e)
+            catch (Exception e)
             {
                 Console.Error.WriteLine(e);
+                Logging.LogUsefulException(e);
             }
         }
     }

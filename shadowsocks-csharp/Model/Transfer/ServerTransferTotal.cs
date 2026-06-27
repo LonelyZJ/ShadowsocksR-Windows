@@ -1,10 +1,11 @@
-using Microsoft.VisualStudio.Threading;
+using Shadowsocks.Controller;
+using Shadowsocks.Enums;
 using Shadowsocks.Util;
 using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Text.Json;
+using System.Text;
 
 namespace Shadowsocks.Model.Transfer
 {
@@ -16,38 +17,50 @@ namespace Shadowsocks.Model.Transfer
         public Dictionary<string, ServerTrans> Servers = new();
         private int _saveCounter;
         private DateTime _saveTime;
+        private static readonly Encoding LogEncoding = new UTF8Encoding(false);
 
         private static readonly TimeSpan MinInterval = TimeSpan.FromMinutes(10);
         private const int MaxSaveCounter = 256;
 
         public static ServerTransferTotal Load()
         {
-            try
+            if (TryLoad(LogFile, out var config, out var loadError))
             {
-                ServerTransferTotal config;
-                if (File.Exists(LogFile))
-                {
-                    config = new ServerTransferTotal
-                    {
-                        Servers = JsonSerializer.Deserialize<Dictionary<string, ServerTrans>>(File.ReadAllText(LogFile))
-                    };
-                }
-                else
-                {
-                    config = new ServerTransferTotal();
-                }
-                config.Init();
                 return config;
             }
-            catch (FileNotFoundException)
+
+            var backupPath = AtomicFile.BackupPath(LogFile);
+            if (TryLoad(backupPath, out config, out var backupError))
             {
-                // ignored
+                Log(LogLevel.Warn, $@"Failed to load {LogFile}, restored from {backupPath}. {loadError}");
+                try
+                {
+                    AtomicFile.WriteAllTextAtomic(LogFile, JsonUtils.Serialize(config.Servers, true), LogEncoding);
+                }
+                catch (Exception e)
+                {
+                    Log(LogLevel.Warn, $@"Failed to restore {LogFile} from backup.");
+                    Logging.LogUsefulException(e);
+                    Console.Error.WriteLine(e);
+                }
+
+                return config;
             }
-            catch (Exception e)
+
+            if (backupError != null && backupError is not FileNotFoundException)
             {
-                Console.WriteLine(e);
+                Log(LogLevel.Error, $@"Failed to load backup {backupPath}. {backupError}");
+                AtomicFile.PreserveCorruptFile(backupPath);
             }
-            return new ServerTransferTotal();
+
+            if (loadError != null && loadError is not FileNotFoundException)
+            {
+                Log(LogLevel.Error, $@"Failed to load {LogFile}. {loadError}");
+            }
+
+            config = new ServerTransferTotal();
+            config.Init();
+            return config;
         }
 
         private void Init()
@@ -64,18 +77,73 @@ namespace Shadowsocks.Model.Transfer
         {
             try
             {
-                if (servers != null)
+                var currentServers = config.Servers;
+                Dictionary<string, ServerTrans> snapshot;
+                lock (currentServers)
                 {
-                    config.Servers = config.Servers
-                    .Where(pair => servers.Exists(server => server.Id == pair.Key))
-                    .ToDictionary(pair => pair.Key, pair => pair.Value);
+                    var source = currentServers.AsEnumerable();
+                    if (servers != null)
+                    {
+                        source = source.Where(pair => servers.Exists(server => server.Id == pair.Key));
+                    }
+
+                    snapshot = source.ToDictionary(
+                        pair => pair.Key,
+                        pair => new ServerTrans
+                        {
+                            TotalUploadBytes = pair.Value.TotalUploadBytes,
+                            TotalDownloadBytes = pair.Value.TotalDownloadBytes
+                        });
+
+                    if (servers != null)
+                    {
+                        config.Servers = snapshot.ToDictionary(
+                            pair => pair.Key,
+                            pair => new ServerTrans
+                            {
+                                TotalUploadBytes = pair.Value.TotalUploadBytes,
+                                TotalDownloadBytes = pair.Value.TotalDownloadBytes
+                            });
+                    }
                 }
-                var jsonString = JsonUtils.Serialize(config.Servers, true);
-                File.WriteAllTextAsync(LogFile, jsonString).Forget();
+
+                var jsonString = JsonUtils.Serialize(snapshot, true);
+                AtomicFile.WriteAllTextAtomic(LogFile, jsonString, LogEncoding);
             }
-            catch (IOException e)
+            catch (Exception e)
             {
                 Console.Error.WriteLine(e);
+                Logging.LogUsefulException(e);
+            }
+        }
+
+        private static bool TryLoad(string filename, out ServerTransferTotal config, out Exception error)
+        {
+            config = null;
+            if (!AtomicFile.TryReadValidJson<Dictionary<string, ServerTrans>>(filename, out var servers, out error))
+            {
+                if (error is not FileNotFoundException)
+                {
+                    AtomicFile.PreserveCorruptFile(filename);
+                }
+
+                return false;
+            }
+
+            config = new ServerTransferTotal { Servers = servers };
+            config.Init();
+            return true;
+        }
+
+        private static void Log(LogLevel level, string message)
+        {
+            try
+            {
+                Logging.Log(level, message);
+            }
+            catch
+            {
+                Console.Error.WriteLine($@"[{level}] {message}");
             }
         }
 
