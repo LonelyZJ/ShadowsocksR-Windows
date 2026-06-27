@@ -153,10 +153,46 @@ namespace Shadowsocks
             {
                 Logging.Log(LogLevel.Error, $@"{e.ExceptionObject}");
                 ShutdownController();
-                MessageBox.Show(
-                $@"{I18NUtil.GetAppStringValue(@"UnexpectedError")}{Environment.NewLine}{e.ExceptionObject}",
-                Controller.HttpRequest.UpdateChecker.Name, MessageBoxButton.OK, MessageBoxImage.Error);
+                ShowUnexpectedError(e.ExceptionObject);
                 Environment.Exit(1);
+            }
+        }
+
+        private static void ShowUnexpectedError(object exceptionObject)
+        {
+            void Show()
+            {
+                MessageBox.Show(
+                $@"{I18NUtil.GetAppStringValue(@"UnexpectedError")}{Environment.NewLine}{exceptionObject}",
+                Controller.HttpRequest.UpdateChecker.Name, MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+
+            try
+            {
+                if (Application.Current?.Dispatcher == null)
+                {
+                    Show();
+                }
+                else
+                {
+                    using var shown = new ManualResetEventSlim();
+                    ViewUtils.RunOnUiThread(() =>
+                    {
+                        try
+                        {
+                            Show();
+                        }
+                        finally
+                        {
+                            shown.Set();
+                        }
+                    });
+                    shown.Wait(TimeSpan.FromSeconds(30));
+                }
+            }
+            catch
+            {
+                // The process is already terminating.
             }
         }
 
@@ -199,13 +235,16 @@ namespace Shadowsocks
 
             if (args.Contains(Constants.ParameterMultiplyInstance))
             {
-                MessageBox.Show(I18NUtil.GetAppStringValue(@"SuccessiveInstancesMessage1") + Environment.NewLine +
-                                I18NUtil.GetAppStringValue(@"SuccessiveInstancesMessage2"),
-                    I18NUtil.GetAppStringValue(@"SuccessiveInstancesCaption"), MessageBoxButton.OK, MessageBoxImage.Information);
+                ViewUtils.RunOnUiThread(() =>
+                {
+                    MessageBox.Show(I18NUtil.GetAppStringValue(@"SuccessiveInstancesMessage1") + Environment.NewLine +
+                                    I18NUtil.GetAppStringValue(@"SuccessiveInstancesMessage2"),
+                        I18NUtil.GetAppStringValue(@"SuccessiveInstancesCaption"), MessageBoxButton.OK, MessageBoxImage.Information);
+                });
             }
-            Application.Current.Dispatcher.InvokeOnUiThread(() =>
+            ViewUtils.RunOnUiThread(() =>
             {
-                Global.ViewController.ImportAddress(string.Join(Environment.NewLine, args));
+                Global.ViewController?.ImportAddress(string.Join(Environment.NewLine, args));
             });
 
             endFunc(string.Empty);

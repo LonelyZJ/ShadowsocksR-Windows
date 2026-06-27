@@ -13,6 +13,7 @@ using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
 using System.Linq;
+using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
@@ -37,9 +38,31 @@ namespace Shadowsocks.Controller
             }
         }
 
-        private static void RunInBackground(Action action)
+        private static void RunInBackground(Action action, [CallerMemberName] string taskName = null)
         {
-            Task.Run(action).Forget();
+            RunInBackground(
+                () =>
+                {
+                    action();
+                    return Task.CompletedTask;
+                },
+                taskName);
+        }
+
+        private static void RunInBackground(Func<Task> action, [CallerMemberName] string taskName = null)
+        {
+            Task.Run(async () =>
+            {
+                try
+                {
+                    await action();
+                }
+                catch (Exception e)
+                {
+                    Logging.Log(LogLevel.Error, $@"Background task failed: {taskName}");
+                    Logging.LogUsefulException(e);
+                }
+            }).Forget();
         }
 
         // yes this is just a menu view controller
@@ -149,7 +172,10 @@ namespace Shadowsocks.Controller
 
         private static void ControllerError(object sender, ErrorEventArgs e)
         {
-            MessageBox.Show(e.GetException().ToString(), string.Format(I18NUtil.GetAppStringValue(@"ControllerError"), e.GetException().Message));
+            ViewUtils.RunOnUiThread(() =>
+            {
+                MessageBox.Show(e.GetException().ToString(), string.Format(I18NUtil.GetAppStringValue(@"ControllerError"), e.GetException().Message));
+            });
         }
 
         private void UpdateTrayIcon()
@@ -372,21 +398,40 @@ namespace Shadowsocks.Controller
 
         private void controller_UpdatePACFromGFWListError(object sender, ErrorEventArgs e)
         {
-            _notifyIcon.ShowBalloonTip(I18NUtil.GetAppStringValue(@"UpdatePacFailed"), e.GetException().Message, BalloonIcon.Error);
             Logging.LogUsefulException(e.GetException());
+            ViewUtils.RunOnUiThread(() =>
+            {
+                if (!_isDisposed)
+                {
+                    _notifyIcon.ShowBalloonTip(I18NUtil.GetAppStringValue(@"UpdatePacFailed"), e.GetException().Message, BalloonIcon.Error);
+                }
+            });
         }
 
         private void controller_UpdatePACFromGFWListCompleted(object sender, GfwListUpdater.ResultEventArgs e)
         {
-            var result = e.Success ?
-                    e.PacType == PacType.GfwList ?
-                    I18NUtil.GetAppStringValue(@"GfwListPacUpdated") : I18NUtil.GetAppStringValue(@"PacUpdated")
-                : I18NUtil.GetAppStringValue(@"GfwListPacNotFound");
-            _notifyIcon.ShowBalloonTip(HttpRequest.UpdateChecker.Name, result, BalloonIcon.Info);
+            ViewUtils.RunOnUiThread(() =>
+            {
+                if (_isDisposed)
+                {
+                    return;
+                }
+
+                var result = e.Success ?
+                        e.PacType == PacType.GfwList ?
+                        I18NUtil.GetAppStringValue(@"GfwListPacUpdated") : I18NUtil.GetAppStringValue(@"PacUpdated")
+                    : I18NUtil.GetAppStringValue(@"GfwListPacNotFound");
+                _notifyIcon.ShowBalloonTip(HttpRequest.UpdateChecker.Name, result, BalloonIcon.Info);
+            });
         }
 
         private void UpdateSubscribeManager_AllCompleted(object sender, SubscribeUpdateSummaryEventArgs e)
         {
+            if (_isDisposed)
+            {
+                return;
+            }
+
             try
             {
                 controller.Reload();
@@ -634,14 +679,30 @@ namespace Shadowsocks.Controller
 
         private void updateChecker_NewVersionNotFound(object sender, EventArgs e)
         {
-            _notifyIcon.ShowBalloonTip($@"{HttpRequest.UpdateChecker.Name} {HttpRequest.UpdateChecker.FullVersion}",
-            $@"{I18NUtil.GetAppStringValue(@"NewVersionNotFound")}{Environment.NewLine}{HttpRequest.UpdateChecker.Version}≥{updateChecker.LatestVersionNumber}",
-            BalloonIcon.Info);
+            Application.Current.Dispatcher.InvokeOnUiThread(() =>
+            {
+                if (_isDisposed)
+                {
+                    return;
+                }
+
+                _notifyIcon.ShowBalloonTip($@"{HttpRequest.UpdateChecker.Name} {HttpRequest.UpdateChecker.FullVersion}",
+                $@"{I18NUtil.GetAppStringValue(@"NewVersionNotFound")}{Environment.NewLine}{HttpRequest.UpdateChecker.Version}>={updateChecker.LatestVersionNumber}",
+                BalloonIcon.Info);
+            });
         }
 
         private void UpdateChecker_NewVersionFoundFailed(object sender, EventArgs e)
         {
-            _notifyIcon.ShowBalloonTip($@"{HttpRequest.UpdateChecker.Name} {HttpRequest.UpdateChecker.FullVersion}", I18NUtil.GetAppStringValue(@"NewVersionFoundFailed"), BalloonIcon.Info);
+            Application.Current.Dispatcher.InvokeOnUiThread(() =>
+            {
+                if (_isDisposed)
+                {
+                    return;
+                }
+
+                _notifyIcon.ShowBalloonTip($@"{HttpRequest.UpdateChecker.Name} {HttpRequest.UpdateChecker.FullVersion}", I18NUtil.GetAppStringValue(@"NewVersionFoundFailed"), BalloonIcon.Info);
+            });
         }
 
         private void UpdateItem_Clicked(object sender, RoutedEventArgs e)
@@ -1003,16 +1064,26 @@ namespace Shadowsocks.Controller
 
         private void Import_Click(object sender, RoutedEventArgs e)
         {
+            var dlg = new OpenFileDialog
+            {
+                InitialDirectory = Directory.GetCurrentDirectory()
+            };
+            if (dlg.ShowDialog() != true)
+            {
+                return;
+            }
+
+            var name = dlg.FileName;
             RunInBackground(() =>
             {
-                var dlg = new OpenFileDialog
+                var cfg = Global.LoadFile(name);
+                ViewUtils.RunOnUiThread(() =>
                 {
-                    InitialDirectory = Directory.GetCurrentDirectory()
-                };
-                if (dlg.ShowDialog() == true)
-                {
-                    var name = dlg.FileName;
-                    var cfg = Global.LoadFile(name);
+                    if (_isDisposed)
+                    {
+                        return;
+                    }
+
                     if (cfg.IsDefaultConfig())
                     {
                         MessageBox.Show(I18NUtil.GetAppStringValue(@"ImportConfigFailed"), HttpRequest.UpdateChecker.Name);
@@ -1021,7 +1092,7 @@ namespace Shadowsocks.Controller
                     {
                         controller.MergeConfiguration(cfg);
                     }
-                }
+                });
             });
         }
 
@@ -1365,16 +1436,18 @@ namespace Shadowsocks.Controller
 
         private void ScanQRCodeItem_Click(object sender, RoutedEventArgs e)
         {
+            var screenBounds = new Rectangle(
+                (int)SystemParameters.VirtualScreenLeft,
+                (int)SystemParameters.VirtualScreenTop,
+                (int)SystemParameters.VirtualScreenWidth,
+                (int)SystemParameters.VirtualScreenHeight);
+
             RunInBackground(() =>
             {
-                var w = (int)SystemParameters.VirtualScreenWidth;
-                var h = (int)SystemParameters.VirtualScreenHeight;
-                var x = (int)SystemParameters.VirtualScreenLeft;
-                var y = (int)SystemParameters.VirtualScreenTop;
-                var fullImage = new Bitmap(w, h);
+                using var fullImage = new Bitmap(screenBounds.Width, screenBounds.Height);
                 using (var g = Graphics.FromImage(fullImage))
                 {
-                    g.CopyFromScreen(x, y,
+                    g.CopyFromScreen(screenBounds.X, screenBounds.Y,
                             0, 0,
                             fullImage.Size,
                             CopyPixelOperation.SourceCopy);
@@ -1387,9 +1460,9 @@ namespace Shadowsocks.Controller
                     var marginTop = (int)((double)fullImage.Height * i / 2.5 / maxTry);
                     var cropRect = new Rectangle(marginLeft, marginTop, fullImage.Width - marginLeft * 2,
                             fullImage.Height - marginTop * 2);
-                    var target = new Bitmap(w, h);
+                    using var target = new Bitmap(screenBounds.Width, screenBounds.Height);
 
-                    var imageScale = w / (double)cropRect.Width;
+                    var imageScale = screenBounds.Width / (double)cropRect.Width;
                     using (var g = Graphics.FromImage(target))
                     {
                         g.DrawImage(fullImage,
@@ -1403,8 +1476,13 @@ namespace Shadowsocks.Controller
                     {
                         var success = controller.AddServerBySsUrl(result.Text);
                         var successSub = controller.AddSubscribeUrl(result.Text);
-                        Application.Current.Dispatcher.InvokeOnUiThread(() =>
+                        ViewUtils.RunOnUiThread(() =>
                         {
+                            if (_isDisposed)
+                            {
+                                return;
+                            }
+
                             var splash = new QRCodeSplashWindow();
                             if (successSub)
                             {
@@ -1439,20 +1517,25 @@ namespace Shadowsocks.Controller
                             maxX += margin + marginLeft;
                             minY += -margin + marginTop;
                             maxY += margin + marginTop;
-                            splash.Left = x;
-                            splash.Top = y;
+                            splash.Left = screenBounds.X;
+                            splash.Top = screenBounds.Y;
                             splash.TargetRect = new Rectangle((int)minX, (int)minY, (int)maxX - (int)minX,
                                     (int)maxY - (int)minY);
-                            splash.Width = fullImage.Width;
-                            splash.Height = fullImage.Height;
-                            fullImage.Dispose();
+                            splash.Width = screenBounds.Width;
+                            splash.Height = screenBounds.Height;
                             splash.Show();
                         });
                         return;
                     }
                 }
 
-                MessageBox.Show(I18NUtil.GetAppStringValue(@"QrCodeNotFound"));
+                ViewUtils.RunOnUiThread(() =>
+                {
+                    if (!_isDisposed)
+                    {
+                        MessageBox.Show(I18NUtil.GetAppStringValue(@"QrCodeNotFound"));
+                    }
+                });
             });
         }
 

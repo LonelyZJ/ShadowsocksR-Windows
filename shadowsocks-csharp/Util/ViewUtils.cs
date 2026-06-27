@@ -5,10 +5,13 @@ using System.Drawing.Drawing2D;
 using System.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Threading;
+using Shadowsocks.Controller;
+using Microsoft.VisualStudio.Threading;
 using Color = System.Drawing.Color;
 using Size = System.Drawing.Size;
 
@@ -170,8 +173,81 @@ namespace Shadowsocks.Util
                 return;
             }
 
+            if (dispatcher.CheckAccess())
+            {
+                RunSafely(action);
+                return;
+            }
+
             var context = new DispatcherSynchronizationContext(dispatcher, priority);
-            context.Post(_ => action(), null);
+            context.Post(_ => RunSafely(action), null);
+        }
+
+        public static void RunOnUiThread(Action action, DispatcherPriority priority = DispatcherPriority.Normal)
+        {
+            var dispatcher = Application.Current?.Dispatcher;
+            if (dispatcher == null)
+            {
+                RunSafely(action);
+                return;
+            }
+
+            dispatcher.InvokeOnUiThread(action, priority);
+        }
+
+        public static async Task RunOnUiThreadAsync(Func<Task> action, DispatcherPriority priority = DispatcherPriority.Normal)
+        {
+            var dispatcher = Application.Current?.Dispatcher;
+            if (dispatcher == null || dispatcher.CheckAccess())
+            {
+                await RunSafelyAsync(action);
+                return;
+            }
+
+            var completion = new TaskCompletionSource<object>();
+            var context = new DispatcherSynchronizationContext(dispatcher, priority);
+            context.Post(_ =>
+            {
+                CompleteOnUiThreadAsync(action, completion).Forget();
+            }, null);
+            await completion.Task;
+        }
+
+        private static void RunSafely(Action action)
+        {
+            try
+            {
+                action();
+            }
+            catch (Exception e)
+            {
+                Logging.LogUsefulException(e);
+            }
+        }
+
+        private static async Task RunSafelyAsync(Func<Task> action)
+        {
+            try
+            {
+                await action();
+            }
+            catch (Exception e)
+            {
+                Logging.LogUsefulException(e);
+            }
+        }
+
+        private static async Task CompleteOnUiThreadAsync(Func<Task> action, TaskCompletionSource<object> completion)
+        {
+            try
+            {
+                await RunSafelyAsync(action);
+                completion.TrySetResult(null);
+            }
+            catch (Exception e)
+            {
+                completion.TrySetException(e);
+            }
         }
     }
 }
