@@ -505,6 +505,7 @@ namespace Shadowsocks.Controller
             StopPortMap();
             // some logic in configuration updated the config when saving, we need to read it again
             Global.GuiConfig = MergeGetConfiguration(Global.GuiConfig);
+            SystemProxy.RecoverFromPreviousRun(Global.GuiConfig.LocalPort);
             Global.GuiConfig.FlushPortMapCache();
             Logging.SaveToFile = Global.GuiConfig.LogEnable;
             Logging.OpenLogFile();

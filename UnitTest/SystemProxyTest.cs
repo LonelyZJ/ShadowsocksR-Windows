@@ -3,17 +3,36 @@ using Shadowsocks.Controller;
 using Shadowsocks.Controller.Service;
 using Shadowsocks.Enums;
 using Shadowsocks.Model;
+using System;
 using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Text.Json;
 
 namespace UnitTest;
 
 [TestClass]
 public class SystemProxyTest
 {
+    private TempCurrentDirectory _tempDirectory;
+    private bool _oldSaveToFile;
+
+    [TestInitialize]
+    public void Setup()
+    {
+        _oldSaveToFile = Logging.SaveToFile;
+        Logging.SaveToFile = false;
+        Logging.DefaultOut = Console.Out;
+        Logging.DefaultError = Console.Error;
+        _tempDirectory = new TempCurrentDirectory();
+    }
+
     [TestCleanup]
     public void Cleanup()
     {
         SystemProxy.ResetBackendFactoryForTesting();
+        Logging.SaveToFile = _oldSaveToFile;
+        _tempDirectory?.Dispose();
     }
 
     [TestMethod]
@@ -102,6 +121,143 @@ public class SystemProxyTest
         Assert.AreEqual(2, host.GlobalCalls);
         Assert.AreEqual("localhost:1080", host.State.ProxyServer);
         Assert.IsTrue(host.State.IsProxy);
+    }
+
+    [TestMethod]
+    public void UpdateGlobalCreatesStartupRecoveryMarker()
+    {
+        var host = new FakeProxyHost { State = DirectStatus() };
+        SystemProxy.SetBackendFactoryForTesting(() => new FakeWindowsProxyBackend(host), DirectStatus());
+        var config = new Configuration
+        {
+            SysProxyMode = ProxyMode.Global,
+            LocalPort = 1080
+        };
+
+        var updated = SystemProxy.Update(config, null);
+
+        Assert.IsTrue(updated);
+        Assert.IsTrue(File.Exists(SystemProxy.StateFileName));
+        using var document = JsonDocument.Parse(File.ReadAllText(SystemProxy.StateFileName));
+        Assert.AreEqual(1080, document.RootElement.GetProperty("LocalPort").GetInt32());
+        Assert.AreEqual((int)ProxyMode.Global, document.RootElement.GetProperty("Mode").GetInt32());
+    }
+
+    [TestMethod]
+    public void RestoreDeletesStartupRecoveryMarker()
+    {
+        var host = new FakeProxyHost { State = DirectStatus() };
+        SystemProxy.SetBackendFactoryForTesting(() => new FakeWindowsProxyBackend(host), DirectStatus());
+        var config = new Configuration
+        {
+            SysProxyMode = ProxyMode.Global,
+            LocalPort = 1080
+        };
+        Assert.IsTrue(SystemProxy.Update(config, null));
+        Assert.IsTrue(File.Exists(SystemProxy.StateFileName));
+
+        var restored = SystemProxy.Restore(1080);
+
+        Assert.IsTrue(restored);
+        Assert.IsFalse(File.Exists(SystemProxy.StateFileName));
+    }
+
+    [TestMethod]
+    public void RecoverFromPreviousRunRestoresOldProxyWhenCurrentProxyPointsToThisApp()
+    {
+        var oldStatus = new SystemProxyStatus(true, true, false, false, "corp-proxy:8080", "localhost", string.Empty);
+        var firstRunHost = new FakeProxyHost { State = DirectStatus() };
+        SystemProxy.SetBackendFactoryForTesting(() => new FakeWindowsProxyBackend(firstRunHost), oldStatus);
+        var config = new Configuration
+        {
+            SysProxyMode = ProxyMode.Global,
+            LocalPort = 1080
+        };
+        Assert.IsTrue(SystemProxy.Update(config, null));
+        SystemProxy.ResetBackendFactoryForTesting();
+
+        var secondRunHost = new FakeProxyHost { State = GlobalStatus(1080) };
+        SystemProxy.SetBackendFactoryForTesting(() => new FakeWindowsProxyBackend(secondRunHost));
+
+        var recovered = SystemProxy.RecoverFromPreviousRun(1080);
+
+        Assert.IsTrue(recovered);
+        Assert.AreEqual(1, secondRunHost.GlobalCalls);
+        Assert.AreEqual("corp-proxy:8080", secondRunHost.State.ProxyServer);
+        Assert.AreEqual("localhost", secondRunHost.State.ProxyBypass);
+        Assert.IsFalse(File.Exists(SystemProxy.StateFileName));
+    }
+
+    [TestMethod]
+    public void RecoverFromPreviousRunDoesNotChangeUserModifiedProxy()
+    {
+        var oldStatus = DirectStatus();
+        var firstRunHost = new FakeProxyHost { State = DirectStatus() };
+        SystemProxy.SetBackendFactoryForTesting(() => new FakeWindowsProxyBackend(firstRunHost), oldStatus);
+        var config = new Configuration
+        {
+            SysProxyMode = ProxyMode.Global,
+            LocalPort = 1080
+        };
+        Assert.IsTrue(SystemProxy.Update(config, null));
+        SystemProxy.ResetBackendFactoryForTesting();
+
+        var userStatus = new SystemProxyStatus(true, true, false, false, "corp-proxy:8080", string.Empty, string.Empty);
+        var secondRunHost = new FakeProxyHost { State = userStatus };
+        SystemProxy.SetBackendFactoryForTesting(() => new FakeWindowsProxyBackend(secondRunHost));
+
+        var recovered = SystemProxy.RecoverFromPreviousRun(1080);
+
+        Assert.IsTrue(recovered);
+        Assert.AreEqual(0, secondRunHost.SetCalls);
+        Assert.AreEqual(0, secondRunHost.DirectCalls);
+        Assert.AreEqual(0, secondRunHost.GlobalCalls);
+        AssertStatus(userStatus, secondRunHost.State);
+        Assert.IsFalse(File.Exists(SystemProxy.StateFileName));
+    }
+
+    [TestMethod]
+    public void RecoverFromPreviousRunFallsBackToDirectWhenSnapshotRestoreFails()
+    {
+        var oldStatus = new SystemProxyStatus(true, true, false, false, "corp-proxy:8080", "localhost", string.Empty);
+        var firstRunHost = new FakeProxyHost { State = DirectStatus() };
+        SystemProxy.SetBackendFactoryForTesting(() => new FakeWindowsProxyBackend(firstRunHost), oldStatus);
+        var config = new Configuration
+        {
+            SysProxyMode = ProxyMode.Global,
+            LocalPort = 1080
+        };
+        Assert.IsTrue(SystemProxy.Update(config, null));
+        SystemProxy.ResetBackendFactoryForTesting();
+
+        var secondRunHost = new FakeProxyHost { State = GlobalStatus(1080) };
+        secondRunHost.GlobalBehaviors.Enqueue(new FakeBehavior(false, false));
+        secondRunHost.GlobalBehaviors.Enqueue(new FakeBehavior(false, false));
+        secondRunHost.GlobalBehaviors.Enqueue(new FakeBehavior(false, false));
+        SystemProxy.SetBackendFactoryForTesting(() => new FakeWindowsProxyBackend(secondRunHost));
+
+        var recovered = SystemProxy.RecoverFromPreviousRun(1080);
+
+        Assert.IsTrue(recovered);
+        Assert.AreEqual(3, secondRunHost.GlobalCalls);
+        Assert.AreEqual(1, secondRunHost.DirectCalls);
+        Assert.IsFalse(secondRunHost.State.IsProxy);
+        Assert.IsFalse(File.Exists(SystemProxy.StateFileName));
+    }
+
+    [TestMethod]
+    public void RecoverFromPreviousRunPreservesCorruptMarker()
+    {
+        File.WriteAllText(SystemProxy.StateFileName, "{ broken");
+        var host = new FakeProxyHost { State = GlobalStatus(1080) };
+        SystemProxy.SetBackendFactoryForTesting(() => new FakeWindowsProxyBackend(host));
+
+        var recovered = SystemProxy.RecoverFromPreviousRun(1080);
+
+        Assert.IsTrue(recovered);
+        Assert.IsTrue(Directory.GetFiles(Environment.CurrentDirectory, SystemProxy.StateFileName + ".corrupt-*").Any());
+        Assert.AreEqual(0, host.DirectCalls);
+        Assert.AreEqual(0, host.GlobalCalls);
     }
 
     [TestMethod]
@@ -262,6 +418,33 @@ public class SystemProxyTest
         private static FakeBehavior Next(Queue<FakeBehavior> behaviors)
         {
             return behaviors.Count > 0 ? behaviors.Dequeue() : new FakeBehavior(true, true);
+        }
+    }
+
+    private sealed class TempCurrentDirectory : IDisposable
+    {
+        private readonly string _originalDirectory;
+        private readonly string _tempDirectory;
+
+        public TempCurrentDirectory()
+        {
+            _originalDirectory = Directory.GetCurrentDirectory();
+            _tempDirectory = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
+            Directory.CreateDirectory(_tempDirectory);
+            Directory.SetCurrentDirectory(_tempDirectory);
+        }
+
+        public void Dispose()
+        {
+            Directory.SetCurrentDirectory(_originalDirectory);
+            try
+            {
+                Directory.Delete(_tempDirectory, true);
+            }
+            catch
+            {
+                // Tests must not fail because another process briefly holds a temp file.
+            }
         }
     }
 }

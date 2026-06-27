@@ -1,8 +1,12 @@
 using Shadowsocks.Controller.Service;
 using Shadowsocks.Enums;
 using Shadowsocks.Model;
+using Shadowsocks.Util;
 using System;
+using System.IO;
 using System.Linq;
+using System.Security.Cryptography;
+using System.Text;
 using System.Threading;
 using WindowsProxy;
 
@@ -102,12 +106,15 @@ public static class SystemProxy
 {
     private const int RetryCount = 3;
     private const int RetryDelayMilliseconds = 100;
+    internal const string StateFileName = @"system-proxy-state.json";
+    private static readonly Encoding StateEncoding = new UTF8Encoding(false);
 
     private static readonly object Lock = new();
     private static Func<IWindowsProxyBackend> _backendFactory = static () => new WindowsProxyBackend();
     private static SystemProxyStatus _old;
     private static bool _initialized;
     private static bool _initialStatusAvailable;
+    private static bool _currentProcessHasWrittenState;
 
     public static bool Restore(int localPort = 0)
     {
@@ -118,11 +125,18 @@ public static class SystemProxy
             if (!_initialStatusAvailable || _old == null)
             {
                 Logging.Log(LogLevel.Warn, "System proxy initial status unavailable; falling back to direct mode.");
-                return ApplyDirectFallback(localPort);
+                var fallback = ApplyDirectFallback(localPort);
+                if (fallback)
+                {
+                    DeleteStateMarker();
+                }
+
+                return fallback;
             }
 
             if (ApplyWithRetry("restore system proxy", backend => backend.Set(_old), actual => Matches(actual, _old)))
             {
+                DeleteStateMarker();
                 return true;
             }
 
@@ -140,7 +154,62 @@ public static class SystemProxy
             if (IsCurrentAppProxy(current, localPort))
             {
                 Logging.Log(LogLevel.Warn, $@"System proxy restore failed and proxy still points to this app: {current}");
-                return ApplyDirectFallback(localPort);
+                var fallback = ApplyDirectFallback(localPort);
+                if (fallback)
+                {
+                    DeleteStateMarker();
+                }
+
+                return fallback;
+            }
+
+            return false;
+        }
+    }
+
+    public static bool RecoverFromPreviousRun(int configuredLocalPort = 0)
+    {
+        lock (Lock)
+        {
+            if (_currentProcessHasWrittenState || !TryLoadStateMarker(out var marker))
+            {
+                return true;
+            }
+
+            if (!Same(marker.AppId, GetAppId()))
+            {
+                Logging.Info("Discarding stale system proxy marker from another app directory.");
+                DeleteStateMarker();
+                return true;
+            }
+
+            var localPort = marker.LocalPort > 0 ? marker.LocalPort : configuredLocalPort;
+            var current = QueryCurrentStatus();
+            if (!IsCurrentAppProxy(current, localPort) && !IsCurrentAppPac(current, localPort, marker.PacUrl))
+            {
+                Logging.Info("Discarding stale system proxy marker because current proxy no longer points to this app.");
+                DeleteStateMarker();
+                return true;
+            }
+
+            if (marker.OldStatus != null && ApplySnapshotWithRetry(marker.OldStatus))
+            {
+                Logging.Info("Recovered stale system proxy from startup marker.");
+                DeleteStateMarker();
+                return true;
+            }
+
+            current = QueryCurrentStatus();
+            if (IsCurrentAppProxy(current, localPort) || IsCurrentAppPac(current, localPort, marker.PacUrl))
+            {
+                Logging.Log(LogLevel.Warn, "System proxy marker restore failed; falling back to direct mode.");
+                var fallback = ApplyDirectFallback(localPort);
+                if (fallback)
+                {
+                    DeleteStateMarker();
+                }
+
+                return fallback;
             }
 
             return false;
@@ -155,7 +224,7 @@ public static class SystemProxy
 
             var sysProxyMode = config.SysProxyMode;
             var globalBypass = string.Empty;
-            return sysProxyMode switch
+            var updated = sysProxyMode switch
             {
                 ProxyMode.Direct => ApplyWithRetry(
                     "set system proxy direct",
@@ -181,6 +250,20 @@ public static class SystemProxy
                     actual => IsGlobal(actual, config.LocalPort, globalBypass)),
                 _ => true
             };
+
+            if (updated)
+            {
+                if (sysProxyMode is ProxyMode.Pac or ProxyMode.Global)
+                {
+                    WriteStateMarker(config.LocalPort, sysProxyMode, pacSrv?.PacUrl ?? string.Empty);
+                }
+                else if (sysProxyMode is ProxyMode.Direct)
+                {
+                    DeleteStateMarker();
+                }
+            }
+
+            return updated;
         }
     }
 
@@ -203,6 +286,7 @@ public static class SystemProxy
             _old = null;
             _initialStatusAvailable = false;
             _initialized = false;
+            _currentProcessHasWrittenState = false;
         }
     }
 
@@ -236,6 +320,38 @@ public static class SystemProxy
     private static bool ApplyDirectFallback(int localPort)
     {
         return ApplyWithRetry("set system proxy direct fallback", backend => backend.Direct(), actual => IsDirect(actual) && !IsCurrentAppProxy(actual, localPort));
+    }
+
+    private static bool ApplySnapshotWithRetry(SystemProxyStatusSnapshot snapshot)
+    {
+        if (snapshot.IsAutoDetect)
+        {
+            Logging.Log(LogLevel.Warn, "Cannot exactly restore auto-detect system proxy mode from marker.");
+            return false;
+        }
+
+        return ApplyWithRetry(
+            "restore system proxy from marker",
+            backend => ApplySnapshot(backend, snapshot),
+            actual => Matches(actual, snapshot.ToStatus()));
+    }
+
+    private static bool ApplySnapshot(IWindowsProxyBackend backend, SystemProxyStatusSnapshot snapshot)
+    {
+        if (snapshot.IsProxy)
+        {
+            backend.Server = snapshot.ProxyServer;
+            backend.Bypass = snapshot.ProxyBypass;
+            return backend.Global();
+        }
+
+        if (snapshot.IsAutoProxyUrl)
+        {
+            backend.AutoConfigUrl = snapshot.AutoConfigUrl;
+            return backend.Pac();
+        }
+
+        return backend.Direct();
     }
 
     private static bool ApplyWithRetry(string operation, Func<IWindowsProxyBackend, bool> apply, Func<SystemProxyStatus, bool> verify)
@@ -326,6 +442,33 @@ public static class SystemProxy
         return entries.Any(entry => IsCurrentAppProxyEntry(entry, localPort));
     }
 
+    private static bool IsCurrentAppPac(SystemProxyStatus status, int localPort, string expectedPacUrl)
+    {
+        if (status == null || !status.IsAutoProxyUrl || string.IsNullOrWhiteSpace(status.AutoConfigUrl))
+        {
+            return false;
+        }
+
+        if (!string.IsNullOrWhiteSpace(expectedPacUrl) && Same(status.AutoConfigUrl, expectedPacUrl))
+        {
+            return true;
+        }
+
+        if (!Uri.TryCreate(status.AutoConfigUrl, UriKind.Absolute, out var uri))
+        {
+            return false;
+        }
+
+        var host = uri.Host.Trim('[', ']');
+        var isLocalHost = host.Equals("localhost", StringComparison.OrdinalIgnoreCase)
+                          || host.Equals("127.0.0.1", StringComparison.OrdinalIgnoreCase)
+                          || host.Equals("::1", StringComparison.OrdinalIgnoreCase);
+
+        return isLocalHost
+               && (localPort <= 0 || uri.Port == localPort)
+               && uri.AbsolutePath.Equals("/pac", StringComparison.OrdinalIgnoreCase);
+    }
+
     private static bool IsCurrentAppProxyEntry(string entry, int localPort)
     {
         var server = entry;
@@ -359,6 +502,146 @@ public static class SystemProxy
                           || host.Equals("::1", StringComparison.OrdinalIgnoreCase);
 
         return isLocalHost && (localPort <= 0 || uri.Port == localPort);
+    }
+
+    private static SystemProxyStatus QueryCurrentStatus()
+    {
+        try
+        {
+            using var backend = CreateBackend();
+            return backend.Query();
+        }
+        catch (Exception e)
+        {
+            Logging.LogUsefulException(e);
+            return null;
+        }
+    }
+
+    private static bool TryLoadStateMarker(out SystemProxyStateMarker marker)
+    {
+        marker = null;
+        if (!File.Exists(StateFilePath))
+        {
+            return false;
+        }
+
+        if (AtomicFile.TryReadValidJson<SystemProxyStateMarker>(StateFilePath, out marker, out var error)
+            && marker != null)
+        {
+            return true;
+        }
+
+        Logging.Log(LogLevel.Warn, $@"System proxy marker is unreadable: {error}");
+        AtomicFile.PreserveCorruptFile(StateFilePath);
+        return false;
+    }
+
+    private static void WriteStateMarker(int localPort, ProxyMode mode, string pacUrl)
+    {
+        try
+        {
+            var marker = new SystemProxyStateMarker
+            {
+                LocalPort = localPort,
+                Mode = mode,
+                UpdatedAt = DateTimeOffset.UtcNow,
+                OldStatus = _initialStatusAvailable ? SystemProxyStatusSnapshot.FromStatus(_old) : null,
+                AppId = GetAppId(),
+                PacUrl = pacUrl
+            };
+            AtomicFile.WriteAllTextAtomic(StateFilePath, JsonUtils.Serialize(marker, true), StateEncoding);
+            _currentProcessHasWrittenState = true;
+        }
+        catch (Exception e)
+        {
+            Logging.Log(LogLevel.Warn, "Failed to write system proxy marker.");
+            Logging.LogUsefulException(e);
+        }
+    }
+
+    private static void DeleteStateMarker()
+    {
+        try
+        {
+            if (File.Exists(StateFilePath))
+            {
+                File.Delete(StateFilePath);
+            }
+        }
+        catch (Exception e)
+        {
+            Logging.LogUsefulException(e);
+        }
+        finally
+        {
+            _currentProcessHasWrittenState = false;
+        }
+    }
+
+    private static string StateFilePath => Path.Combine(Directory.GetCurrentDirectory(), StateFileName);
+
+    private static string GetAppId()
+    {
+        var directory = Path.GetFullPath(Directory.GetCurrentDirectory()).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(directory.ToUpperInvariant()));
+        return Convert.ToHexString(bytes);
+    }
+
+    internal sealed class SystemProxyStateMarker
+    {
+        public int LocalPort { get; set; }
+
+        public ProxyMode Mode { get; set; }
+
+        public DateTimeOffset UpdatedAt { get; set; }
+
+        public SystemProxyStatusSnapshot OldStatus { get; set; }
+
+        public string AppId { get; set; } = string.Empty;
+
+        public string PacUrl { get; set; } = string.Empty;
+    }
+
+    internal sealed class SystemProxyStatusSnapshot
+    {
+        public bool IsDirect { get; set; }
+
+        public bool IsProxy { get; set; }
+
+        public bool IsAutoProxyUrl { get; set; }
+
+        public bool IsAutoDetect { get; set; }
+
+        public string ProxyServer { get; set; } = string.Empty;
+
+        public string ProxyBypass { get; set; } = string.Empty;
+
+        public string AutoConfigUrl { get; set; } = string.Empty;
+
+        public static SystemProxyStatusSnapshot FromStatus(SystemProxyStatus status)
+        {
+            if (status == null)
+            {
+                return null;
+            }
+
+            return new SystemProxyStatusSnapshot
+            {
+                IsDirect = status.IsDirect,
+                IsProxy = status.IsProxy,
+                IsAutoProxyUrl = status.IsAutoProxyUrl,
+                IsAutoDetect = status.IsAutoDetect,
+                ProxyServer = status.ProxyServer,
+                ProxyBypass = status.ProxyBypass,
+                AutoConfigUrl = status.AutoConfigUrl
+            };
+        }
+
+        public SystemProxyStatus ToStatus()
+        {
+            return new SystemProxyStatus(IsDirect, IsProxy, IsAutoProxyUrl, IsAutoDetect, ProxyServer, ProxyBypass, AutoConfigUrl);
+        }
     }
 
     private sealed class WindowsProxyBackend : IWindowsProxyBackend

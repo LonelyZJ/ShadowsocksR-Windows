@@ -42,6 +42,7 @@ namespace Shadowsocks
             app.Exit += App_Exit;
 
             Global.LoadConfig();
+            Controller.SystemProxy.RecoverFromPreviousRun(Global.GuiConfig.LocalPort);
 
             I18NUtil.SetLanguage(Global.GuiConfig.LangName);
             ViewUtils.SetResource(app.Resources, @"../View/NotifyIconResources.xaml", 1);

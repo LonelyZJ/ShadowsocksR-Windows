@@ -63,6 +63,28 @@ public class MainControllerLifecycleTest
         Assert.AreEqual(0, host.DirectCalls);
     }
 
+    [TestMethod]
+    public void ShutdownDeletesStartupRecoveryMarkerAfterProxyRestore()
+    {
+        using var _ = new TempCurrentDirectory();
+        var host = new FakeProxyHost { State = DirectStatus() };
+        SystemProxy.SetBackendFactoryForTesting(() => new FakeWindowsProxyBackend(host), DirectStatus());
+        Global.GuiConfig = new Configuration
+        {
+            SysProxyMode = ProxyMode.Global,
+            LocalPort = 1080
+        };
+        Assert.IsTrue(SystemProxy.Update(Global.GuiConfig, null));
+        Assert.IsTrue(File.Exists(SystemProxy.StateFileName));
+        var controller = new MainController();
+
+        var shutdown = controller.Shutdown();
+
+        Assert.IsTrue(shutdown);
+        Assert.AreEqual(1, host.SetCalls);
+        Assert.IsFalse(File.Exists(SystemProxy.StateFileName));
+    }
+
     private static SystemProxyStatus DirectStatus()
     {
         return new SystemProxyStatus(true, false, false, false, string.Empty, string.Empty, string.Empty);
@@ -167,7 +189,7 @@ public class MainControllerLifecycleTest
             }
             catch
             {
-                // The transfer log save is asynchronous; leaving a temp directory is safer than racing it.
+                // Leaving a temp directory is safer than failing because a file is briefly held open.
             }
         }
     }
