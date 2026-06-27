@@ -3,6 +3,7 @@ using Shadowsocks.Enums;
 using Shadowsocks.Model;
 using System;
 using System.Net;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace Shadowsocks.Controller.HttpRequest
@@ -22,10 +23,8 @@ namespace Shadowsocks.Controller.HttpRequest
             Notify = notify;
             try
             {
-                var proxy = CreateProxy(config);
                 SubscribeTask = subscribeTask;
-                var url = subscribeTask.Url ?? DefaultUpdateUrl;
-                UpdateAsync(subscribeTask.ProxyType, proxy, config.ConnectTimeout * 1000, url, config.ProxyUserAgent).Forget();
+                UpdateAsync(config, subscribeTask, notify).Forget();
             }
             catch (Exception e)
             {
@@ -33,18 +32,29 @@ namespace Shadowsocks.Controller.HttpRequest
             }
         }
 
-        private async Task UpdateAsync(HttpRequestProxyType proxyType, IWebProxy proxy, int timeout, string url, string userAgent)
+        public virtual async Task<string> CheckUpdateAsync(Configuration config, ServerSubscribe subscribeTask, bool notify, CancellationToken ct)
+        {
+            var proxy = CreateProxy(config);
+            var url = subscribeTask.Url ?? DefaultUpdateUrl;
+            var timeout = config.ConnectTimeout * 1000;
+            var userAgent = config.ProxyUserAgent;
+
+            ct.ThrowIfCancellationRequested();
+            return subscribeTask.ProxyType switch
+            {
+                HttpRequestProxyType.Auto => await AutoGetAsync(url, proxy, userAgent, timeout),
+                HttpRequestProxyType.Direct => await DirectGetAsync(url, userAgent, timeout),
+                HttpRequestProxyType.Proxy => await ProxyGetAsync(url, proxy, userAgent, timeout),
+                HttpRequestProxyType.SystemSetting => await DefaultGetAsync(url, userAgent, timeout),
+                _ => await AutoGetAsync(url, proxy, userAgent, timeout)
+            };
+        }
+
+        private async Task UpdateAsync(Configuration config, ServerSubscribe subscribeTask, bool notify)
         {
             try
             {
-                FreeNodeResult = proxyType switch
-                {
-                    HttpRequestProxyType.Auto => await AutoGetAsync(url, proxy, userAgent, timeout),
-                    HttpRequestProxyType.Direct => await DirectGetAsync(url, userAgent, timeout),
-                    HttpRequestProxyType.Proxy => await ProxyGetAsync(url, proxy, userAgent, timeout),
-                    HttpRequestProxyType.SystemSetting => await DefaultGetAsync(url, userAgent, timeout),
-                    _ => await AutoGetAsync(url, proxy, userAgent, timeout)
-                };
+                FreeNodeResult = await CheckUpdateAsync(config, subscribeTask, notify, CancellationToken.None);
             }
             catch (Exception ex)
             {

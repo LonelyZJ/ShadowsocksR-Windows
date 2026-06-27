@@ -104,6 +104,9 @@
 
     <sys:String x:Key="UpdateSubscribeSuccess">伺服器訂閱 {0} 更新成功</sys:String>
     <sys:String x:Key="UpdateSubscribeFailure">伺服器訂閱 {0} 更新失敗</sys:String>
+    <sys:String x:Key="UpdateSubscribeStarted">訂閱更新已開始</sys:String>
+    <sys:String x:Key="UpdateSubscribeQueued">已有訂閱更新正在進行，本次請求已加入佇列</sys:String>
+    <sys:String x:Key="UpdateSubscribeSummary">訂閱更新完成。成功 {0}，失敗 {1}，新增 {2}，刪除 {3}，未變化 {4}。</sys:String>
 
     <sys:String x:Key="QrCodeNotFound">未發現 QR 碼，嘗試把它放大或移動到靠近螢幕中間的位置</sys:String>
 

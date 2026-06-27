@@ -104,6 +104,9 @@
 
     <sys:String x:Key="UpdateSubscribeSuccess">Update subscribe {0} success</sys:String>
     <sys:String x:Key="UpdateSubscribeFailure">Update subscribe {0} failure</sys:String>
+    <sys:String x:Key="UpdateSubscribeStarted">Subscription update started</sys:String>
+    <sys:String x:Key="UpdateSubscribeQueued">A subscription update is already running. The request has been queued.</sys:String>
+    <sys:String x:Key="UpdateSubscribeSummary">Subscription update completed. Success {0}, failure {1}, added {2}, removed {3}, unchanged {4}.</sys:String>
 
     <sys:String x:Key="QrCodeNotFound">No QRCode found. Try to zoom in or move it to the center of the screen.</sys:String>
 

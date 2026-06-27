@@ -123,9 +123,9 @@ namespace Shadowsocks.Controller
             updateChecker.NewVersionFoundFailed += UpdateChecker_NewVersionFoundFailed;
 
             Global.UpdateNodeChecker = new UpdateNode();
-            Global.UpdateNodeChecker.NewFreeNodeFound += UpdateNodeCheckerNewNodeFound;
 
             Global.UpdateSubscribeManager = new UpdateSubscribeManager();
+            Global.UpdateSubscribeManager.AllCompleted += UpdateSubscribeManager_AllCompleted;
 
             LoadCurrentConfiguration();
 
@@ -385,6 +385,40 @@ namespace Shadowsocks.Controller
             _notifyIcon.ShowBalloonTip(HttpRequest.UpdateChecker.Name, result, BalloonIcon.Info);
         }
 
+        private void UpdateSubscribeManager_AllCompleted(object sender, SubscribeUpdateSummaryEventArgs e)
+        {
+            try
+            {
+                controller.Reload();
+            }
+            catch (Exception ex)
+            {
+                Logging.LogUsefulException(ex);
+            }
+
+            if (!e.Notify || _isDisposed)
+            {
+                return;
+            }
+
+            Application.Current.Dispatcher.InvokeOnUiThread(() =>
+            {
+                if (_isDisposed)
+                {
+                    return;
+                }
+
+                var message = string.Format(
+                    I18NUtil.GetAppStringValue(@"UpdateSubscribeSummary"),
+                    e.SuccessCount,
+                    e.FailureCount,
+                    e.AddedCount,
+                    e.RemovedCount,
+                    e.UpdatedCount);
+                _notifyIcon.ShowBalloonTip(HttpRequest.UpdateChecker.Name, message, BalloonIcon.Info);
+            });
+        }
+
         private void UpdateNodeCheckerNewNodeFound(object sender, EventArgs e)
         {
             if (configFrom_open)
@@ -574,7 +608,6 @@ namespace Shadowsocks.Controller
                 }
             }
 
-            Global.UpdateSubscribeManager.Next();
         }
 
         private void updateChecker_NewVersionFound(object sender, EventArgs e)
@@ -1235,7 +1268,33 @@ namespace Shadowsocks.Controller
 
         private void CheckNodeUpdate_Click(object sender, RoutedEventArgs e)
         {
-            Global.UpdateSubscribeManager.CreateTask(Global.GuiConfig, Global.UpdateNodeChecker, true);
+            var status = Global.UpdateSubscribeManager.CreateTask(Global.GuiConfig, Global.UpdateNodeChecker, true);
+            ShowSubscribeScheduleStatus(status);
+        }
+
+        private void ShowSubscribeScheduleStatus(SubscribeUpdateScheduleStatus status)
+        {
+            if (_isDisposed)
+            {
+                return;
+            }
+
+            switch (status)
+            {
+                case SubscribeUpdateScheduleStatus.Started:
+                    _notifyIcon.ShowBalloonTip(
+                        HttpRequest.UpdateChecker.Name,
+                        I18NUtil.GetAppStringValue(@"UpdateSubscribeStarted"),
+                        BalloonIcon.Info);
+                    break;
+                case SubscribeUpdateScheduleStatus.Queued:
+                case SubscribeUpdateScheduleStatus.AlreadyQueued:
+                    _notifyIcon.ShowBalloonTip(
+                        HttpRequest.UpdateChecker.Name,
+                        I18NUtil.GetAppStringValue(@"UpdateSubscribeQueued"),
+                        BalloonIcon.Info);
+                    break;
+            }
         }
 
         private void ShowLogItem_Click(object sender, RoutedEventArgs e)
