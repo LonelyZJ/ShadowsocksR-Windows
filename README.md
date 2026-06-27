@@ -5,6 +5,10 @@
 
 ## Forked from [HMBSbige/ShadowsocksR-Windows](https://github.com/HMBSbige/ShadowsocksR-Windows)
 
+## Fork Release Channel
+Current fork release series: `v6.1.0-net10`.
+In-app update checks and downloads use [LonelyZJ/ShadowsocksR-Windows releases](https://github.com/LonelyZJ/ShadowsocksR-Windows/releases).
+
 ## Key Updates
 Based on [ShadowsocksR-Windows 6.1.0](https://github.com/HMBSbige/ShadowsocksR-Windows/releases/tag/6.1.0), this fork includes the following updates:
 - Upgraded to .NET 10: migrated the main project and unit tests from net7.0 to net10.0.

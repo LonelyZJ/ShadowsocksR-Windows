@@ -5,6 +5,10 @@
 
 ## Forked from [HMBSbige/ShadowsocksR-Windows](https://github.com/HMBSbige/ShadowsocksR-Windows)
 
+## Fork 发布通道
+当前 fork 发布系列：`v6.1.0-net10`。
+应用内更新检查和下载地址使用 [LonelyZJ/ShadowsocksR-Windows releases](https://github.com/LonelyZJ/ShadowsocksR-Windows/releases)。
+
 ## 主要更新
 基于 [ShadowsocksR-Windows 6.1.0](https://github.com/HMBSbige/ShadowsocksR-Windows/releases/tag/6.1.0)，做出如下更新：
 - 升级到 .NET 10：主项目和单元测试从 net7.0 迁移到 net10.0。

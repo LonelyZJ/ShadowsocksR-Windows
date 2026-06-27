@@ -9,6 +9,11 @@ $net_tfm = 'net10.0-windows'
 $configuration = 'Release'
 $output_dir = "$PSScriptRoot\shadowsocks-csharp\bin\$configuration"
 $proj_path = "$PSScriptRoot\shadowsocks-csharp\shadowsocksr.csproj"
+$version_args = @()
+if (-not [string]::IsNullOrWhiteSpace($env:SSR_INFORMATIONAL_VERSION))
+{
+	$version_args += "/p:InformationalVersion=$env:SSR_INFORMATIONAL_VERSION"
+}
 
 $build    = $buildtfm -eq 'all' -or $buildtfm -eq 'app'
 $buildX86 = $buildtfm -eq 'all' -or $buildtfm -eq 'x86'
@@ -22,7 +27,7 @@ function Build-App
 
 	Remove-Item $publishDir -Recurse -Force -Confirm:$false -ErrorAction Ignore
 	
-	dotnet publish -c $configuration -f $net_tfm $proj_path
+	dotnet publish -c $configuration -f $net_tfm $proj_path @version_args
 	if ($LASTEXITCODE) { exit $LASTEXITCODE }
 
 	& "$PSScriptRoot\Build\DotNetDllPathPatcher.ps1" $publishDir\$exe bin
@@ -40,7 +45,7 @@ function Build-SelfContained
 
 	Remove-Item $publishDir -Recurse -Force -Confirm:$false -ErrorAction Ignore
 
-	dotnet publish -c $configuration -f $net_tfm -r $rid --self-contained true $proj_path
+	dotnet publish -c $configuration -f $net_tfm -r $rid --self-contained true $proj_path @version_args
 	if ($LASTEXITCODE) { exit $LASTEXITCODE }
 
 	& "$PSScriptRoot\Build\DotNetDllPathPatcher.ps1" $publishDir\$exe bin

@@ -1042,12 +1042,12 @@ namespace Shadowsocks.Controller
 
         private static void OpenWiki_Click(object sender, RoutedEventArgs e)
         {
-            Utils.OpenURL(@"https://github.com/HMBSbige/ShadowsocksR-Windows/wiki");
+            Utils.OpenURL(HttpRequest.UpdateChecker.DocumentationUrl);
         }
 
         private static void FeedbackItem_Click(object sender, RoutedEventArgs e)
         {
-            Utils.OpenURL(@"https://github.com/LonelyZJ/ShadowsocksR-Windows/issues/new/choose");
+            Utils.OpenURL(HttpRequest.UpdateChecker.FeedbackUrl);
         }
 
         private void notifyIcon_TrayLeftMouseUp(object sender, RoutedEventArgs e)

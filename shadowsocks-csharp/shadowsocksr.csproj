@@ -10,13 +10,16 @@
     <GenerateAssemblyCopyrightAttribute>false</GenerateAssemblyCopyrightAttribute>
     <GenerateAssemblyVersionAttribute>false</GenerateAssemblyVersionAttribute>
     <GenerateAssemblyFileVersionAttribute>false</GenerateAssemblyFileVersionAttribute>
-    <GenerateAssemblyInformationalVersionAttribute>false</GenerateAssemblyInformationalVersionAttribute>
+    <GenerateAssemblyInformationalVersionAttribute>true</GenerateAssemblyInformationalVersionAttribute>
     <AssemblyName>ShadowsocksR</AssemblyName>
     <RootNamespace>Shadowsocks</RootNamespace>
     <ApplicationIcon>shadowsocks.ico</ApplicationIcon>
     <StartupObject>Shadowsocks.Program</StartupObject>
     <LangVersion>latest</LangVersion>
     <SelfContained>false</SelfContained>
+    <Version>6.1.0-net10</Version>
+    <InformationalVersion Condition="'$(InformationalVersion)' == ''">$(Version)</InformationalVersion>
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|AnyCPU'">
